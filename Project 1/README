@@ -2,9 +2,6 @@ NAME: Bradley Mont
 EMAIL: bradleymont@gmail.com
 ID: 804993030
 
-//a README file with identification information, a description of the included files, the smoke-test cases in the check target, and any other information about
-your submission that you would like to bring to our attention (e.g., research, limitations, features, testing methodology).
-
 Description of Included Files
 
 lab0.c: This file contains the source code for a program that takes input from stdin by reading from file descriptor zero until the end of the file (using 
