@@ -1,0 +1,59 @@
+NAME: Bradley Mont
+EMAIL: bradleymont@gmail.com
+ID: 804993030
+
+//a README file with identification information, a description of the included files, the smoke-test cases in the check target, and any other information about
+your submission that you would like to bring to our attention (e.g., research, limitations, features, testing methodology).
+
+Description of Included Files
+
+lab0.c: This file contains the source code for a program that takes input from stdin by reading from file descriptor zero until the end of the file (using 
+read(2)). Then, (if no errors occurred) it copies the contents of the input and writes it to stdout by write(2)-ing to file descriptor 1. The program accepts the 
+following optional command line arguments:
+1. --input=fileName: When this argument is passed, the program uses I/O redirection to use the given file as standard input.
+2. --output=fileName: When this argument is passed, the program uses I/O redirection to use the given file as standard output.
+3. --segfault: This command forces a segmentation fault (by setting a pointer to a char to NULL and then trying to access from it).
+4. --catch: This command registers a SIGSEGV handler to catch segmentation faults and then log an error message to stderr.
+5. --dump-core: This command resets to the default behavior for a segmentation fault: dumping core instead of catching it with the SIGSEGV handler.
+
+Makefile: This file builds the program and has the following targets:
+1. default: uses gcc to build the lab0 executable. Compiles with -Wall -Wextra -g options
+2. check: runs basic smoke-test cases to test the basic functionality of the program (correct exit statuses, argument parsing, copying from stdin to stdout)
+3. clean: resets the directory to its state before being tarred by deleting any files created by the Makefile
+4. dist: builds a tarball with all the necessary source files
+5. the following targets are smoke-test cases that I will explain below: checkNoArgs, checkIncorrectArgs, checkBadInputFile, checkBadOutputFile, 
+checkBadOutputFile, checkFilesMatch
+
+backtrace.png: This is a screenshot that I obtained by by compiling my lab0 program with the -g flag (debug symbols) and then running it under the gdb debugger. 
+Within gdb, I ran the program with the --segfault argument and then hit the segmentation fault. I then used the backtrace command to print the stack backtrace, and 
+I took a screenshot of the output.
+
+breakpoint.png: This is a screenshot that I obtained by compiling my lab0 program with the -g flag (debug symbols) and then running it under the gdb debugger. 
+However, this time I set a breakpoint (using the breakpoint command) at the line in my lab0.c file that the segmentation fault occurred at. I then ran the program 
+with the --segfault option until it stopped at the breakpoint that I set. I then printed the value of my variable I chose to make the segmentation fault with, and 
+I saw that it was indeed NULL. I then took a screenshot of the gdb output.
+
+README: This file is includes my ID information, descriptions of all the included files, descriptions of all of my smoke-test cases, and my sources used.
+
+Smoke-Test Cases
+
+1. checkNoArgs: tests if the program correctly exits with status 0 when given no parameters and valid input/output destinations.
+
+2. checkIncorrectArgs: tests if the program correctly exits with status 1 when given incorrect argument(s).
+
+3. checkBadInputFile: tests if the program correctly exits with a status 2 when given an invalid file as input (in this case, a file that doesn't exist).
+
+4. checkBadOutputFile: tests if the program correctly exits with a status 3 when given an invalid file as output (in this case, a file that we do not have 
+permission to write to).
+
+5. checkCatchSegfault: tests if the program correctly exits with a status 4 when catching a segmentation fault with the SIGSEGV handler.
+
+6. checkFilesMatch: tests that when given two valid files, the program correctly copies the contents of the input file to the output file.
+
+Sources:
+I consulted the man pages for all of the commands needed for the lab. For example, for fprintf(3), I executed the command [man 3 fprintf] on the linux server and 
+consulted that man page for information about the command. 
+
+For I/O redirection and file descriptor manipulation, I consulted the link in the description: http://web.cs.ucla.edu/classes/winter19/cs111/labs/fd_juggling.html
+
+For how to make a Makefile, I consulted the following video: https://youtu.be/_r7i5X0rXJk
