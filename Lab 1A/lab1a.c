@@ -2,7 +2,7 @@
 // EMAIL: bradleymont@gmail.com
 // ID: 804993030
 
-#include <unistd.h> //for close(2), dup2(2), execvp(3), fork(2), getopt_long(3), pipe(2)
+#include <unistd.h> //for close(2), dup2(2), execvp(3), fork(2), getopt_long(3), pipe(2), execvp(3)
 #include <getopt.h> //for getopt_long(3)
 #include <fcntl.h> //for open(2)
 #include <signal.h> //for sigaction(2)
@@ -20,8 +20,91 @@ void executeCommand(int in, int out, int err, char* cmd, char** args, int argCou
 
     for (int i = 0; i < argCount; i++)
     {
-        printf("argument #%d: %s\n", i, args[i]);
+        printf("argument #%d: %s\n", i + 1, args[i]);
     }
+    
+    char* arguments[argCount + 2];
+    arguments[0] = cmd;
+    for (int i = 1; i <= argCount; i++)
+    {
+        arguments[i] = args[i - 1];
+    }
+    arguments[1 + argCount] = NULL;
+
+    execvp(arguments[0], arguments);
+}
+
+void parseCommandArguments(int argc, char **argv)
+{
+    optind--;
+    
+    int count = 0;
+    
+    int in;
+    int out;
+    int err;
+    char* cmd;
+    char** args = (char **) malloc(sizeof(char *));
+    int cmdArgCount = 0;
+    
+    while (optind < argc)
+    {
+        //check to see if the currArg starts with two dashes. If so, then break
+        char* currArg = argv[optind];
+        int strLength = strlen(currArg);
+
+        if (strLength >= 2)
+        {
+            char firstTwoCharacters[3];
+            strncpy(firstTwoCharacters, currArg, 2);
+            firstTwoCharacters[2] = 0;
+            
+            char* twoDashes = "--";
+            
+            if (strcmp(firstTwoCharacters, twoDashes) == 0)
+            {
+                break;
+            }
+        }
+        
+        switch (count)
+        {
+            case 0:
+                in = atoi(currArg);
+                break;
+            case 1:
+                out = atoi(currArg);
+                break;
+            case 2:
+                err = atoi(currArg);
+                break;
+            case 3:
+                count++;
+                count--;
+                //change this to something smarter!!!
+                int argLength = strlen(currArg);
+                cmd = (char*) malloc(argLength * sizeof(char));
+                strcpy(cmd, currArg);
+                break;
+            default:    //one of cmd's arguments
+                args[cmdArgCount] = currArg;
+                char **largerArgArray = realloc(args, (cmdArgCount + 2) * sizeof(char*));
+                
+                if (largerArgArray == NULL)
+                {
+                    free(largerArgArray);
+                    fprintf(stderr, "Error allocating more memory.");
+                    exit(1);
+                }
+                
+                args = largerArgArray;
+                cmdArgCount++;
+        }
+        
+        optind++;
+        count++;
+    } //end of while loop
+    executeCommand(in, out, err, cmd, args, cmdArgCount);
 }
 
 void openFile(char* fileName, int permission, char** arrayOfFiles, int position)
@@ -42,7 +125,7 @@ void openFile(char* fileName, int permission, char** arrayOfFiles, int position)
     //then, add the file to our array of files
     arrayOfFiles[position] = fileName;
     
-    char** largerFileArray = realloc(arrayOfFiles, (position + 1) * sizeof(char*));
+    char** largerFileArray = realloc(arrayOfFiles, (position + 2) * sizeof(char*));
     
     if (largerFileArray == NULL)
     {
@@ -56,6 +139,14 @@ void openFile(char* fileName, int permission, char** arrayOfFiles, int position)
 
 int main(int argc, char **argv)
 {
+//    char* args[3];
+//    args[0] = "ls";
+//    args[1] = "CS33";
+//    args[2] = NULL;
+//
+//    execvp(args[0], args);
+//    return 0;
+    
     static struct option long_options[] =
     {
         {"rdonly",  required_argument, NULL, 'r'},
@@ -89,67 +180,14 @@ int main(int argc, char **argv)
                 fileDescriptorNum++;
                 break;
             case 'c':
-                //since the --command flag accepts multiple arguments, we must parse them manually
-                optind--;
-        
-                int count = 0;
-                
-                int in;
-                int out;
-                int err;
-                char* cmd;
-                char** args = (char **) malloc(sizeof(char *));
-                int cmdArgCount = 0;
-                
-                while (optind < argc && *(argv[optind]) != '-')
-                {
-                    char* currArg = argv[optind];
-                    
-                    switch (count)
-                    {
-                        case 0:
-                            in = atoi(currArg);
-                            break;
-                        case 1:
-                            out = atoi(currArg);
-                            break;
-                        case 2:
-                            err = atoi(currArg);
-                            break;
-                        case 3:
-                            count++;
-                            count--;
-                            //change this to something smarter
-                            int argLength = strlen(currArg);
-                            cmd = (char*) malloc(argLength * sizeof(char));
-                            strcpy(cmd, currArg);
-                            break;
-                        default:    //one of cmd's arguments
-                            args[cmdArgCount] = currArg;
-                            char **largerArgArray = realloc(args, (cmdArgCount + 1) * sizeof(char*));
-                            
-                            if (largerArgArray == NULL)
-                            {
-                                free(largerArgArray);
-                                fprintf(stderr, "Error allocating more memory.");
-                                exit(1);
-                            }
-                            
-                            args = largerArgArray;
-                            cmdArgCount++;
-                    }
-                    
-                    optind++;
-                    count++;
-                } //end of while loop within case c
-                executeCommand(in, out, err, cmd, args, cmdArgCount);
+                parseCommandArguments(argc, argv);
                 break;
             case 'v':
-                //will implement later
+                //will implement later!!!
                 break;
             case '?':
                 fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab1a --rdonly [fileName] --wronly [fileName] --command [stdin] [stdout] [stderr] [executable] [args] --verbose\n");
                 break;
-        }   //end of swirch statement
-    } // end of outside while
-}   //end of main
+        }
+    }
+}
