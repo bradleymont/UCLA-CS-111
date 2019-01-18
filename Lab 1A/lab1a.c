@@ -10,9 +10,11 @@
 #include <stdlib.h> //for malloc,exit(2)
 #include <string.h> //for stderror(3), strcpy
 #include <errno.h> //to get errno for error messages
+#include <sys/wait.h> //for wait(2)
 
 void executeCommand(int in, int out, int err, char* cmd, char** args, int argCount)
 {
+    /*
     printf("in: %d\n", in);
     printf("out: %d\n", out);
     printf("err: %d\n", err);
@@ -22,16 +24,49 @@ void executeCommand(int in, int out, int err, char* cmd, char** args, int argCou
     {
         printf("argument #%d: %s\n", i + 1, args[i]);
     }
+     */
     
-    char* arguments[argCount + 2];
-    arguments[0] = cmd;
-    for (int i = 1; i <= argCount; i++)
+    int PID = fork();
+    
+    if (PID < 0)    //the fork failed
     {
-        arguments[i] = args[i - 1];
+        fprintf(stderr, "Error: fork command failed.\n");
+        exit(1);
     }
-    arguments[1 + argCount] = NULL;
-
-    execvp(arguments[0], arguments);
+    else if (PID == 0)  //child process
+    {
+        //I/O REDIRECTION
+        
+        //set stdin to in
+        close(0);
+        dup(in + 3);
+        close(in + 3);
+        
+        //set stdout to out
+        close(1);
+        dup(out + 3);
+        close(out + 3);
+        
+        //set stderr to err
+        close(2);
+        dup(err + 3);
+        close(err + 3);
+        
+        char* arguments[argCount + 2];
+        arguments[0] = cmd;
+        for (int i = 1; i <= argCount; i++)
+        {
+            arguments[i] = args[i - 1];
+        }
+        arguments[1 + argCount] = NULL;
+        
+        execvp(arguments[0], arguments);
+    }
+    else    //parent process
+    {
+        //int childPID = wait(NULL);
+        wait(NULL);
+    }
 }
 
 void parseCommandArguments(int argc, char **argv)
@@ -112,7 +147,7 @@ void openFile(char* fileName, int permission, char** arrayOfFiles, int position)
     //first, open the file, setting it to the lowest unused file descriptor
     int fileDescriptor = open(fileName, permission);
     
-    printf("putting file %s in file descriptor #%d\n", fileName, fileDescriptor);
+    //printf("putting file %s in file descriptor #%d\n", fileName, fileDescriptor);
     
     if (fileDescriptor < 0)
     {
