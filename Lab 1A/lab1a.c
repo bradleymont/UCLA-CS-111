@@ -12,19 +12,11 @@
 #include <errno.h> //to get errno for error messages
 #include <sys/wait.h> //for wait(2)
 
-void executeCommand(int in, int out, int err, char* cmd, char** args, int argCount)
-{
-    /*
-    printf("in: %d\n", in);
-    printf("out: %d\n", out);
-    printf("err: %d\n", err);
-    printf("cmd: %s\n", cmd);
+//FREE YOUR MEMORY
 
-    for (int i = 0; i < argCount; i++)
-    {
-        printf("argument #%d: %s\n", i + 1, args[i]);
-    }
-     */
+int executeCommand(int newStdin, int newStdout, int newStderr, char* cmd, char** args, int argCount)
+{
+    int exitStatus = 0;
     
     int PID = fork();
     
@@ -36,21 +28,20 @@ void executeCommand(int in, int out, int err, char* cmd, char** args, int argCou
     else if (PID == 0)  //child process
     {
         //I/O REDIRECTION
-        
         //set stdin to in
         close(0);
-        dup(in + 3);
-        close(in + 3);
-        
+        dup2(newStdin, 0);
+        close(newStdin);
+
         //set stdout to out
         close(1);
-        dup(out + 3);
-        close(out + 3);
-        
+        dup2(newStdout, 1);
+        close(newStdout);
+
         //set stderr to err
         close(2);
-        dup(err + 3);
-        close(err + 3);
+        dup2(newStderr, 2);
+        close(newStderr);
         
         char* arguments[argCount + 2];
         arguments[0] = cmd;
@@ -61,15 +52,22 @@ void executeCommand(int in, int out, int err, char* cmd, char** args, int argCou
         arguments[1 + argCount] = NULL;
         
         execvp(arguments[0], arguments);
+        
+        
     }
     else    //parent process
     {
+        //idk what to do
         //int childPID = wait(NULL);
-        wait(NULL);
+        //wait(NULL);
     }
+    
+    
+    
+    return exitStatus;
 }
 
-void parseCommandArguments(int argc, char **argv)
+void parseCommandArguments(int argc, char **argv, int* fileDescriptors, int verbose)
 {
     optind--;
     
@@ -139,17 +137,39 @@ void parseCommandArguments(int argc, char **argv)
         optind++;
         count++;
     } //end of while loop
-    executeCommand(in, out, err, cmd, args, cmdArgCount);
+    
+    int newStdin = fileDescriptors[in];
+    int newStdout = fileDescriptors[out];
+    int newStderr = fileDescriptors[err];
+    
+    if (verbose)
+    {
+        printf("--command %d %d %d %s", in, out, err, cmd);
+        for (int i = 0; i < cmdArgCount; i++)
+        {
+            printf(" %s", args[i]);
+        }
+        printf("\n");
+    }
+    
+    int exitCode = executeCommand(newStdin, newStdout, newStderr, cmd, args, cmdArgCount);
+    
+    //print out status after finishing
+    printf("exit %d %s", exitCode, cmd);
+    
+    for (int i = 0; i < cmdArgCount; i++)
+    {
+        printf(" %s", args[i]);
+    }
+    printf("\n");
 }
 
-void openFile(char* fileName, int permission, char** arrayOfFiles, int position)
+void openFile(char* fileName, int permission, int* fileDescriptors, int position)
 {
     //first, open the file, setting it to the lowest unused file descriptor
     int fileDescriptor = open(fileName, permission);
     
-    //printf("putting file %s in file descriptor #%d\n", fileName, fileDescriptor);
-    
-    if (fileDescriptor < 0)
+    if (fileDescriptor < 0) //if an error occurred opening the file
     {
         //errno contains the error number
         //strerror then takes the error number as a parameter, and then returns a string describing the error
@@ -157,30 +177,29 @@ void openFile(char* fileName, int permission, char** arrayOfFiles, int position)
         fprintf(stderr, "Error caused when trying to open the following file name: %s\n", fileName);
     }
     
-    //then, add the file to our array of files
-    arrayOfFiles[position] = fileName;
+    //then, add the file descriptor to our array of file descriptors
+    //if the open was successful, the file descriptor of 'fileName' will be added to the array
+    //if the open failed, then -1 will be added to the array
+    fileDescriptors[position] = fileDescriptor;
     
-    char** largerFileArray = realloc(arrayOfFiles, (position + 2) * sizeof(char*));
+    int * largerFileDescriptorArray = realloc(fileDescriptors, (position + 2) * sizeof(int));
     
-    if (largerFileArray == NULL)
+    if (largerFileDescriptorArray == NULL)
     {
-        free(arrayOfFiles);
+        free(fileDescriptors);
         fprintf(stderr, "Error allocating more memory.");
         exit(1);
     }
     
-    arrayOfFiles = largerFileArray;
+    fileDescriptors = largerFileDescriptorArray;
 }
 
 int main(int argc, char **argv)
 {
-//    char* args[3];
-//    args[0] = "ls";
-//    args[1] = "CS33";
-//    args[2] = NULL;
-//
-//    execvp(args[0], args);
-//    return 0;
+    
+    //FIGURE OUT HOW TO HANDLE EXITING
+    int EXITSTATUS = 0;
+    
     
     static struct option long_options[] =
     {
@@ -192,10 +211,18 @@ int main(int argc, char **argv)
     };
     
     //array of file names
-    char ** files = (char **) malloc(sizeof(char *));
+    //char ** files = (char **) malloc(sizeof(char *));
+    
+    //when we open a file, we put its file descriptor in the lowest available spot in the fileDescriptors array
+    //if the file fails to open, we put a -1 in the array
+    int * fileDescriptors = (int *) malloc(sizeof(int));
     int fileDescriptorNum = 0;
     
+    
+    
     int optResult;
+    
+    int verbose = 0;
     
     while (1)
     {
@@ -207,22 +234,33 @@ int main(int argc, char **argv)
         switch (optResult)
         {
             case 'r':
-                openFile(optarg, O_RDONLY, files, fileDescriptorNum);
+                if (verbose)
+                {
+                    printf("--rdonly %s\n", optarg);
+                }
+                openFile(optarg, O_RDONLY, fileDescriptors, fileDescriptorNum);
                 fileDescriptorNum++;
                 break;
             case 'w':
-                openFile(optarg, O_WRONLY, files, fileDescriptorNum);
+                if (verbose)
+                {
+                    printf("--wronly %s\n", optarg);
+                }
+                openFile(optarg, O_WRONLY, fileDescriptors, fileDescriptorNum);
                 fileDescriptorNum++;
                 break;
             case 'c':
-                parseCommandArguments(argc, argv);
+                parseCommandArguments(argc, argv, fileDescriptors, verbose);
                 break;
             case 'v':
-                //will implement later!!!
+                verbose = 1;
                 break;
             case '?':
                 fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab1a --rdonly [fileName] --wronly [fileName] --command [stdin] [stdout] [stderr] [executable] [args] --verbose\n");
+                EXITSTATUS = 1;
                 break;
         }
     }
+    
+    return EXITSTATUS;
 }
