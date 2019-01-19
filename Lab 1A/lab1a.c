@@ -13,8 +13,67 @@
 #include <sys/wait.h> //for wait(2)
 
 //FREE YOUR MEMORY
+//THINK ABOUT WHEN THE COMMAND CMD HAS ZERO ARGS
 
-int executeCommand(int newStdin, int newStdout, int newStderr, char* cmd, char** args, int argCount)
+/* for printing exit codes
+ 
+ 
+ //    if (verbose)
+ //    {
+ //        printf("--command %d %d %d %s", in, out, err, cmd);
+ //        for (int i = 0; i < cmdArgCount; i++)
+ //        {
+ //            printf(" %s", args[i]);
+ //        }
+ //        printf("\n");
+ //    }
+ 
+ 
+ //print out status after finishing
+ //    printf("exit %d %s", exitCode, cmd);
+ //
+ //    for (int i = 0; i < cmdArgCount; i++)
+ //    {
+ //        printf(" %s", args[i]);
+ //    }
+ //    printf("\n");
+ 
+ 
+*/
+
+int startsWithTwoDashes(char* arg)
+{
+    int strLength = strlen(arg);
+    
+    if (strLength >= 2)
+    {
+        char firstTwoCharacters[3];
+        strncpy(firstTwoCharacters, arg, 2);
+        firstTwoCharacters[2] = 0;
+        
+        char* twoDashes = "--";
+        
+        if (strcmp(firstTwoCharacters, twoDashes) == 0)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+
+struct commandFlagArgs
+{
+    int in, out, err;
+    char* cmd;
+    char** args;
+    int numArgs;
+};
+
+
+
+
+int executeCommand(struct commandFlagArgs cmdArgs, int * fileDescriptors)
 {
     int exitStatus = 0;
     
@@ -27,33 +86,37 @@ int executeCommand(int newStdin, int newStdout, int newStderr, char* cmd, char**
     }
     else if (PID == 0)  //child process
     {
-        //I/O REDIRECTION
-        //set stdin to in
+        //IO REDIRECTION
+        
+        //update stdin
+        int newStdin = fileDescriptors[cmdArgs.in];
         close(0);
         dup2(newStdin, 0);
         close(newStdin);
-
-        //set stdout to out
+        
+        //update stdout
+        int newStdout = fileDescriptors[cmdArgs.out];
         close(1);
         dup2(newStdout, 1);
         close(newStdout);
-
-        //set stderr to err
+        
+        //update stderr
+        int newStderr = fileDescriptors[cmdArgs.err];
         close(2);
         dup2(newStderr, 2);
         close(newStderr);
         
-        char* arguments[argCount + 2];
-        arguments[0] = cmd;
-        for (int i = 1; i <= argCount; i++)
+        char* arguments[cmdArgs.numArgs + 2];
+        arguments[0] = cmdArgs.cmd;
+        
+        for (int i = 1; i <= cmdArgs.numArgs; i++)
         {
-            arguments[i] = args[i - 1];
+            arguments[i] = cmdArgs.args[i - 1];
         }
-        arguments[1 + argCount] = NULL;
         
+        arguments[cmdArgs.numArgs + 1] = NULL;
+      
         execvp(arguments[0], arguments);
-        
-        
     }
     else    //parent process
     {
@@ -62,110 +125,75 @@ int executeCommand(int newStdin, int newStdout, int newStderr, char* cmd, char**
         //wait(NULL);
     }
     
-    
-    
     return exitStatus;
 }
 
-void parseCommandArguments(int argc, char **argv, int* fileDescriptors, int verbose)
+struct commandFlagArgs parseCommandArguments(int argc, char **argv)
 {
+    struct commandFlagArgs result;
+    result.args = (char **) malloc(sizeof(char *));
+    
     optind--;
     
     int count = 0;
-    
-    int in;
-    int out;
-    int err;
-    char* cmd;
-    char** args = (char **) malloc(sizeof(char *));
     int cmdArgCount = 0;
     
     while (optind < argc)
     {
-        //check to see if the currArg starts with two dashes. If so, then break
         char* currArg = argv[optind];
-        int strLength = strlen(currArg);
-
-        if (strLength >= 2)
+        
+        //check to see if the currArg starts with two dashes. If so, then break
+        if (startsWithTwoDashes(currArg))
         {
-            char firstTwoCharacters[3];
-            strncpy(firstTwoCharacters, currArg, 2);
-            firstTwoCharacters[2] = 0;
-            
-            char* twoDashes = "--";
-            
-            if (strcmp(firstTwoCharacters, twoDashes) == 0)
-            {
-                break;
-            }
+            break;
         }
         
         switch (count)
         {
             case 0:
-                in = atoi(currArg);
+                result.in = atoi(currArg);
                 break;
             case 1:
-                out = atoi(currArg);
+                result.out = atoi(currArg);
                 break;
             case 2:
-                err = atoi(currArg);
+                result.err = atoi(currArg);
                 break;
             case 3:
                 count++;
                 count--;
                 //change this to something smarter!!!
                 int argLength = strlen(currArg);
-                cmd = (char*) malloc(argLength * sizeof(char));
-                strcpy(cmd, currArg);
+                result.cmd = (char*) malloc(argLength * sizeof(char));
+                strcpy(result.cmd, currArg);
                 break;
-            default:    //one of cmd's arguments
-                args[cmdArgCount] = currArg;
-                char **largerArgArray = realloc(args, (cmdArgCount + 2) * sizeof(char*));
-                
+            default: //one of cmd's arguments
+                result.args[cmdArgCount] = currArg;
+                char **largerArgArray = realloc(result.args, (cmdArgCount + 2) * sizeof(char*));
+            
                 if (largerArgArray == NULL)
                 {
                     free(largerArgArray);
                     fprintf(stderr, "Error allocating more memory.");
                     exit(1);
                 }
-                
-                args = largerArgArray;
+                result.args = largerArgArray;
                 cmdArgCount++;
-        }
+        }   //end of switch
         
         optind++;
         count++;
-    } //end of while loop
+    }  //end of while
     
-    int newStdin = fileDescriptors[in];
-    int newStdout = fileDescriptors[out];
-    int newStderr = fileDescriptors[err];
+    result.numArgs = cmdArgCount;
     
-    if (verbose)
-    {
-        printf("--command %d %d %d %s", in, out, err, cmd);
-        for (int i = 0; i < cmdArgCount; i++)
-        {
-            printf(" %s", args[i]);
-        }
-        printf("\n");
-    }
-    
-    int exitCode = executeCommand(newStdin, newStdout, newStderr, cmd, args, cmdArgCount);
-    
-    //print out status after finishing
-    printf("exit %d %s", exitCode, cmd);
-    
-    for (int i = 0; i < cmdArgCount; i++)
-    {
-        printf(" %s", args[i]);
-    }
-    printf("\n");
+    return result;
 }
 
-void openFile(char* fileName, int permission, int* fileDescriptors, int position)
+int openFile(char* fileName, int permission, int* fileDescriptors, int position)
 {
+    int openFileReturnStatus = 0;
+    
     //first, open the file, setting it to the lowest unused file descriptor
     int fileDescriptor = open(fileName, permission);
     
@@ -175,6 +203,7 @@ void openFile(char* fileName, int permission, int* fileDescriptors, int position
         //strerror then takes the error number as a parameter, and then returns a string describing the error
         fprintf(stderr, "Error #%d: %s\n", errno, strerror(errno));
         fprintf(stderr, "Error caused when trying to open the following file name: %s\n", fileName);
+        openFileReturnStatus = 1;
     }
     
     //then, add the file descriptor to our array of file descriptors
@@ -192,6 +221,7 @@ void openFile(char* fileName, int permission, int* fileDescriptors, int position
     }
     
     fileDescriptors = largerFileDescriptorArray;
+    return openFileReturnStatus;
 }
 
 int main(int argc, char **argv)
@@ -199,7 +229,6 @@ int main(int argc, char **argv)
     
     //FIGURE OUT HOW TO HANDLE EXITING
     int EXITSTATUS = 0;
-    
     
     static struct option long_options[] =
     {
@@ -209,16 +238,11 @@ int main(int argc, char **argv)
         {"verbose", no_argument,       NULL, 'v'},
         {0,         0,                 0,      0}
     };
-    
-    //array of file names
-    //char ** files = (char **) malloc(sizeof(char *));
-    
+
     //when we open a file, we put its file descriptor in the lowest available spot in the fileDescriptors array
     //if the file fails to open, we put a -1 in the array
     int * fileDescriptors = (int *) malloc(sizeof(int));
     int fileDescriptorNum = 0;
-    
-    
     
     int optResult;
     
@@ -238,7 +262,11 @@ int main(int argc, char **argv)
                 {
                     printf("--rdonly %s\n", optarg);
                 }
-                openFile(optarg, O_RDONLY, fileDescriptors, fileDescriptorNum);
+                int rdOnlyReturnStatus = openFile(optarg, O_RDONLY, fileDescriptors, fileDescriptorNum);
+                if (rdOnlyReturnStatus)
+                {
+                    EXITSTATUS = 1;
+                }
                 fileDescriptorNum++;
                 break;
             case 'w':
@@ -246,11 +274,19 @@ int main(int argc, char **argv)
                 {
                     printf("--wronly %s\n", optarg);
                 }
-                openFile(optarg, O_WRONLY, fileDescriptors, fileDescriptorNum);
+                int wrOnlyReturnStatus = openFile(optarg, O_WRONLY, fileDescriptors, fileDescriptorNum);
+                if (wrOnlyReturnStatus)
+                {
+                    EXITSTATUS = 1;
+                }
                 fileDescriptorNum++;
                 break;
             case 'c':
-                parseCommandArguments(argc, argv, fileDescriptors, verbose);
+                //just to appease the compiler for now
+                verbose--; verbose++;
+                //create an instance of the struct
+                struct commandFlagArgs cmdArgs = parseCommandArguments(argc, argv);
+                int exitCode = executeCommand(cmdArgs, fileDescriptors);
                 break;
             case 'v':
                 verbose = 1;
