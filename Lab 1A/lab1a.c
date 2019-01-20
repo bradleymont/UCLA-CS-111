@@ -12,23 +12,9 @@
 #include <errno.h> //to get errno for error messages
 #include <sys/wait.h> //for wait(2)
 
-//FREE YOUR MEMORY
+// YOUR MEMORY
 //THINK ABOUT WHEN THE COMMAND CMD HAS ZERO ARGS
 //THINK ABOUT IF THE FD OF A FAILED OPEN IS PASSED - just check if it equals -1 in the fd array
-
-/* for printing exit codes
- 
- //print out status after finishing
- //    printf("exit %d %s", exitCode, cmd);
- //
- //    for (int i = 0; i < cmdArgCount; i++)
- //    {
- //        printf(" %s", args[i]);
- //    }
- //    printf("\n");
- 
- 
-*/
 
 int startsWithTwoDashes(char* arg)
 {
@@ -62,7 +48,7 @@ struct commandFlagArgs
 
 
 
-void executeCommand(struct commandFlagArgs cmdArgs, int * fileDescriptors)
+void executeCommand(struct commandFlagArgs cmdArgs, int * FDarray)
 {
     int PID = fork();
     
@@ -76,19 +62,19 @@ void executeCommand(struct commandFlagArgs cmdArgs, int * fileDescriptors)
         //IO REDIRECTION
         
         //update stdin
-        int newStdin = fileDescriptors[cmdArgs.in];
+        int newStdin = FDarray[cmdArgs.in];
         close(0);
         dup2(newStdin, 0);
         close(newStdin);
         
         //update stdout
-        int newStdout = fileDescriptors[cmdArgs.out];
+        int newStdout = FDarray[cmdArgs.out];
         close(1);
         dup2(newStdout, 1);
         close(newStdout);
         
         //update stderr
-        int newStderr = fileDescriptors[cmdArgs.err];
+        int newStderr = FDarray[cmdArgs.err];
         close(2);
         dup2(newStderr, 2);
         close(newStderr);
@@ -116,12 +102,13 @@ void executeCommand(struct commandFlagArgs cmdArgs, int * fileDescriptors)
 struct commandFlagArgs parseCommandArguments(int argc, char **argv)
 {
     struct commandFlagArgs result;
-    result.args = (char **) malloc(sizeof(char *));
     
     optind--;
     
     int count = 0;
     int cmdArgCount = 0;
+    
+    int optindAtFirstCmdArg = -1;
     
     while (optind < argc)
     {
@@ -152,17 +139,21 @@ struct commandFlagArgs parseCommandArguments(int argc, char **argv)
                 result.cmd = (char*) malloc(argLength * sizeof(char));
                 strcpy(result.cmd, currArg);
                 break;
+            case 4:
+                optindAtFirstCmdArg = optind;
+                cmdArgCount++;
+                break;
             default: //one of cmd's arguments
-                result.args[cmdArgCount] = currArg;
-                char **largerArgArray = realloc(result.args, (cmdArgCount + 2) * sizeof(char*));
-            
-                if (largerArgArray == NULL)
-                {
-                    free(largerArgArray);
-                    fprintf(stderr, "Error allocating more memory.");
-                    exit(1);
-                }
-                result.args = largerArgArray;
+//                result.args[cmdArgCount] = currArg;
+//                char **largerArgArray = realloc(result.args, (cmdArgCount + 2) * sizeof(char*));
+//
+//                if (largerArgArray == NULL)
+//                {
+//                    fr00(largerArgArray);
+//                    fprintf(stderr, "Error allocating more memory.");
+//                    exit(1);
+//                }
+//                result.args = largerArgArray;
                 cmdArgCount++;
         }   //end of switch
         
@@ -170,12 +161,37 @@ struct commandFlagArgs parseCommandArguments(int argc, char **argv)
         count++;
     }  //end of while
     
+    
+    
+    //if any arguments were passed to the --command flag
+    if (cmdArgCount > 0)
+    {
+        result.args = (char **) malloc(cmdArgCount * sizeof(char *));
+        optind = optindAtFirstCmdArg;   //reset optind to the first command argument
+        
+        int pos = 0;
+        while (optind < argc)
+        {
+            char* currArg = argv[optind];
+            
+            //check to see if the currArg starts with two dashes. If so, then break
+            if (startsWithTwoDashes(currArg))
+            {
+                break;
+            }
+            
+            result.args[pos] = currArg;
+            optind++;
+            pos++;
+        }
+    }
+    
     result.numArgs = cmdArgCount;
     
     return result;
 }
 
-int openFile(char* fileName, int permission, int* fileDescriptors, int position)
+int openFile(char* fileName, int permission, int* FDs, int position)
 {
     int openFileReturnStatus = 0;
     
@@ -194,18 +210,10 @@ int openFile(char* fileName, int permission, int* fileDescriptors, int position)
     //then, add the file descriptor to our array of file descriptors
     //if the open was successful, the file descriptor of 'fileName' will be added to the array
     //if the open failed, then -1 will be added to the array
-    fileDescriptors[position] = fileDescriptor;
+    FDs[position] = fileDescriptor;
     
-    int * largerFileDescriptorArray = realloc(fileDescriptors, (position + 2) * sizeof(int));
-    
-    if (largerFileDescriptorArray == NULL)
-    {
-        free(fileDescriptors);
-        fprintf(stderr, "Error allocating more memory.");
-        exit(1);
-    }
-    
-    fileDescriptors = largerFileDescriptorArray;
+    FDs = realloc(FDs, (position + 2) * sizeof(int));
+
     return openFileReturnStatus;
 }
 
@@ -297,6 +305,17 @@ int main(int argc, char **argv)
                 //create an instance of the struct
                 struct commandFlagArgs cmdArgs = parseCommandArguments(argc, argv);
                 
+                //for testing
+//                printf("in: %d\n", cmdArgs.in);
+//                printf("out: %d\n", cmdArgs.out);
+//                printf("err: %d\n", cmdArgs.err);
+//                printf("cmd: %s\n", cmdArgs.cmd);
+//                printf("numArgs: %d\n", cmdArgs.numArgs);
+//                for (int i = 0; i < cmdArgs.numArgs; i++)
+//                {
+//                    printf("arg #%d: %s\n", i+1, cmdArgs.args[i]);
+//                }
+                
                 if (verbose)
                 {
                     printf("--command %d %d %d %s", cmdArgs.in, cmdArgs.out, cmdArgs.err, cmdArgs.cmd);
@@ -320,9 +339,12 @@ int main(int argc, char **argv)
                     EXITSTATUS = 1;
                 }
                 
-                //free memory
+                //fr-- memory
                 free(cmdArgs.cmd);
-                free(cmdArgs.args);
+                if (cmdArgs.numArgs > 0)
+                {
+                    free(cmdArgs.args);
+                }
                 break;
             case 'v':
                 verbose = 1;
