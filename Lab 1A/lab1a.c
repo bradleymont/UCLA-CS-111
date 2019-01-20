@@ -25,9 +25,9 @@ int startsWithTwoDashes(char* arg)
         char firstTwoCharacters[3];
         strncpy(firstTwoCharacters, arg, 2);
         firstTwoCharacters[2] = 0;
-        
+
         char* twoDashes = "--";
-        
+
         if (strcmp(firstTwoCharacters, twoDashes) == 0)
         {
             return 1;
@@ -135,38 +135,28 @@ struct commandFlagArgs parseCommandArguments(int argc, char **argv)
                 count++;
                 count--;
                 //change this to something smarter!!!
-                int argLength = strlen(currArg);
-                result.cmd = (char*) malloc(argLength * sizeof(char));
-                strcpy(result.cmd, currArg);
+                //int argLength = strlen(currArg);
+                //result.cmd = (char*) malloc(argLength * sizeof(char));
+                //strcpy(result.cmd, currArg);
+                result.cmd = currArg;
                 break;
             case 4:
                 optindAtFirstCmdArg = optind;
                 cmdArgCount++;
                 break;
             default: //one of cmd's arguments
-//                result.args[cmdArgCount] = currArg;
-//                char **largerArgArray = realloc(result.args, (cmdArgCount + 2) * sizeof(char*));
-//
-//                if (largerArgArray == NULL)
-//                {
-//                    fr00(largerArgArray);
-//                    fprintf(stderr, "Error allocating more memory.");
-//                    exit(1);
-//                }
-//                result.args = largerArgArray;
                 cmdArgCount++;
-        }   //end of switch
+        }
         
         optind++;
         count++;
-    }  //end of while
-    
-    
+    }
     
     //if any arguments were passed to the --command flag
     if (cmdArgCount > 0)
     {
         result.args = (char **) malloc(cmdArgCount * sizeof(char *));
+        //char * WHYDOESNTTHISWORK[cmdArgCount];
         optind = optindAtFirstCmdArg;   //reset optind to the first command argument
         
         int pos = 0;
@@ -181,11 +171,13 @@ struct commandFlagArgs parseCommandArguments(int argc, char **argv)
             }
             
             result.args[pos] = currArg;
+            //WHYDOESNTTHISWORK[pos] = currArg;
             optind++;
             pos++;
         }
     }
     
+    //result.args = WHYDOESNTTHISWORK; //NEW
     result.numArgs = cmdArgCount;
     
     return result;
@@ -216,9 +208,6 @@ int openFile(char* fileName, int permission, int* FDs, int position)
 
     return openFileReturnStatus;
 }
-
-
-
 
 int checkFileDescriptors(int in, int out, int err, int fileDescriptorNum)
 {
@@ -340,7 +329,7 @@ int main(int argc, char **argv)
                 }
                 
                 //fr-- memory
-                free(cmdArgs.cmd);
+                //free(cmdArgs.cmd);
                 if (cmdArgs.numArgs > 0)
                 {
                     free(cmdArgs.args);
