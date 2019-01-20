@@ -14,20 +14,9 @@
 
 //FREE YOUR MEMORY
 //THINK ABOUT WHEN THE COMMAND CMD HAS ZERO ARGS
+//THINK ABOUT IF THE FD OF A FAILED OPEN IS PASSED - just check if it equals -1 in the fd array
 
 /* for printing exit codes
- 
- 
- //    if (verbose)
- //    {
- //        printf("--command %d %d %d %s", in, out, err, cmd);
- //        for (int i = 0; i < cmdArgCount; i++)
- //        {
- //            printf(" %s", args[i]);
- //        }
- //        printf("\n");
- //    }
- 
  
  //print out status after finishing
  //    printf("exit %d %s", exitCode, cmd);
@@ -73,10 +62,8 @@ struct commandFlagArgs
 
 
 
-int executeCommand(struct commandFlagArgs cmdArgs, int * fileDescriptors)
+void executeCommand(struct commandFlagArgs cmdArgs, int * fileDescriptors)
 {
-    int exitStatus = 0;
-    
     int PID = fork();
     
     if (PID < 0)    //the fork failed
@@ -124,8 +111,6 @@ int executeCommand(struct commandFlagArgs cmdArgs, int * fileDescriptors)
         //int childPID = wait(NULL);
         //wait(NULL);
     }
-    
-    return exitStatus;
 }
 
 struct commandFlagArgs parseCommandArguments(int argc, char **argv)
@@ -224,6 +209,31 @@ int openFile(char* fileName, int permission, int* fileDescriptors, int position)
     return openFileReturnStatus;
 }
 
+
+
+
+int checkFileDescriptors(int in, int out, int err, int fileDescriptorNum)
+{
+    int valid = 1;
+    if (in < 0 || in >= fileDescriptorNum)
+    {
+        fprintf(stderr, "Error: invalid file descriptor passed to --command for stdin: %d\n", in);
+        valid = 0;
+    }
+    if (out < 0 || out >= fileDescriptorNum)
+    {
+        fprintf(stderr, "Error: invalid file descriptor passed to --command for stdout: %d\n", out);
+        valid = 0;
+    }
+    if (err < 0 || err >= fileDescriptorNum)
+    {
+        fprintf(stderr, "Error: invalid file descriptor passed to --command for stderr: %d\n", err);
+        valid = 0;
+    }
+    
+    return valid;
+}
+
 int main(int argc, char **argv)
 {
     
@@ -286,7 +296,33 @@ int main(int argc, char **argv)
                 verbose--; verbose++;
                 //create an instance of the struct
                 struct commandFlagArgs cmdArgs = parseCommandArguments(argc, argv);
-                int exitCode = executeCommand(cmdArgs, fileDescriptors);
+                
+                if (verbose)
+                {
+                    printf("--command %d %d %d %s", cmdArgs.in, cmdArgs.out, cmdArgs.err, cmdArgs.cmd);
+                    for (int i = 0; i < cmdArgs.numArgs; i++)
+                    {
+                        printf(" %s", cmdArgs.args[i]);
+                    }
+                    printf("\n");
+                }
+
+                //check that valid ints were passed for the file descriptors
+                //the fd should be >= 0 and < fileDescriptorNum
+                int validFdsPassed = checkFileDescriptors(cmdArgs.in, cmdArgs.out, cmdArgs.err, fileDescriptorNum);
+                
+                if (validFdsPassed)
+                {
+                    executeCommand(cmdArgs, fileDescriptors);
+                }
+                else  //an invalid file descriptor number passed
+                {
+                    EXITSTATUS = 1;
+                }
+                
+                //free memory
+                free(cmdArgs.cmd);
+                free(cmdArgs.args);
                 break;
             case 'v':
                 verbose = 1;
@@ -297,6 +333,9 @@ int main(int argc, char **argv)
                 break;
         }
     }
+    
+    //free dynamically allocated memory
+    free(fileDescriptors);
     
     return EXITSTATUS;
 }
