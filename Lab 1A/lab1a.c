@@ -183,7 +183,8 @@ struct commandFlagArgs parseCommandArguments(int argc, char **argv)
     return result;
 }
 
-int openFile(char* fileName, int permission, int* FDs, int position)
+//int openFile(char* fileName, int permission, int* FDs, int position)
+int openFile(char* fileName, int permission, int** FDs, int position)
 {
     int openFileReturnStatus = 0;
     
@@ -202,9 +203,14 @@ int openFile(char* fileName, int permission, int* FDs, int position)
     //then, add the file descriptor to our array of file descriptors
     //if the open was successful, the file descriptor of 'fileName' will be added to the array
     //if the open failed, then -1 will be added to the array
-    FDs[position] = fileDescriptor;
     
-    FDs = realloc(FDs, (position + 2) * sizeof(int));
+    //OLD
+    //FDs[position] = fileDescriptor;
+    //FDs = realloc(FDs, (position + 2) * sizeof(int));
+    
+    //NEW
+    (*FDs)[position] = fileDescriptor;
+    *FDs = realloc(*FDs, (position + 2) * sizeof(int));
 
     return openFileReturnStatus;
 }
@@ -248,7 +254,14 @@ int main(int argc, char **argv)
 
     //when we open a file, we put its file descriptor in the lowest available spot in the fileDescriptors array
     //if the file fails to open, we put a -1 in the array
+    
+    
+    
     int * fileDescriptors = (int *) malloc(sizeof(int));
+    //LETS TRY JUST 100
+    //int fileDescriptors[100];
+    
+    
     int fileDescriptorNum = 0;
     
     int optResult;
@@ -269,7 +282,11 @@ int main(int argc, char **argv)
                 {
                     printf("--rdonly %s\n", optarg);
                 }
-                int rdOnlyReturnStatus = openFile(optarg, O_RDONLY, fileDescriptors, fileDescriptorNum);
+                
+                
+                //int rdOnlyReturnStatus = openFile(optarg, O_RDONLY, fileDescriptors, fileDescriptorNum);
+                int rdOnlyReturnStatus = openFile(optarg, O_RDONLY, &fileDescriptors, fileDescriptorNum);
+                
                 if (rdOnlyReturnStatus)
                 {
                     EXITSTATUS = 1;
@@ -281,7 +298,12 @@ int main(int argc, char **argv)
                 {
                     printf("--wronly %s\n", optarg);
                 }
-                int wrOnlyReturnStatus = openFile(optarg, O_WRONLY, fileDescriptors, fileDescriptorNum);
+                
+                
+                //int wrOnlyReturnStatus = openFile(optarg, O_WRONLY, fileDescriptors, fileDescriptorNum);
+                int wrOnlyReturnStatus = openFile(optarg, O_WRONLY, &fileDescriptors, fileDescriptorNum);
+                
+                
                 if (wrOnlyReturnStatus)
                 {
                     EXITSTATUS = 1;
