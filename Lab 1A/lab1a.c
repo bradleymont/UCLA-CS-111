@@ -12,9 +12,59 @@
 #include <errno.h> //to get errno for error messages
 #include <sys/wait.h> //for wait(2)
 
-// YOUR MEMORY
-//THINK ABOUT WHEN THE COMMAND CMD HAS ZERO ARGS
-//THINK ABOUT IF THE FD OF A FAILED OPEN IS PASSED - just check if it equals -1 in the fd array
+int openFile(char* fileName, int permission, int** FDs, int position)
+{
+    int openFileReturnStatus = 0;
+    
+    //first, open the file, setting it to the lowest unused file descriptor
+    int fileDescriptor = open(fileName, permission);
+    
+    if (fileDescriptor < 0) //if an error occurred opening the file
+    {
+        //errno contains the error number
+        //strerror then takes the error number as a parameter, and then returns a string describing the error
+        fprintf(stderr, "Error #%d: %s\n", errno, strerror(errno));
+        fprintf(stderr, "Error caused when trying to open the following file name: %s\n", fileName);
+        openFileReturnStatus = 1;
+    }
+    
+    //if the open was successful, the file descriptor of 'fileName' will be added to the array
+    //if the open failed, then -1 will be added to the array
+    (*FDs)[position] = fileDescriptor;
+    *FDs = realloc(*FDs, (position + 2) * sizeof(int));
+    
+    return openFileReturnStatus;
+}
+
+int checkFileDescriptors(int in, int out, int err, int fileDescriptorNum)
+{
+    int valid = 1;
+    if (in < 0 || in >= fileDescriptorNum)
+    {
+        fprintf(stderr, "Error: invalid file descriptor passed to --command for stdin: %d\n", in);
+        valid = 0;
+    }
+    if (out < 0 || out >= fileDescriptorNum)
+    {
+        fprintf(stderr, "Error: invalid file descriptor passed to --command for stdout: %d\n", out);
+        valid = 0;
+    }
+    if (err < 0 || err >= fileDescriptorNum)
+    {
+        fprintf(stderr, "Error: invalid file descriptor passed to --command for stderr: %d\n", err);
+        valid = 0;
+    }
+    
+    return valid;
+}
+
+struct commandFlagArgs
+{
+    int in, out, err;
+    char* cmd;
+    char** args;
+    int numArgs;
+};
 
 int startsWithTwoDashes(char* arg)
 {
@@ -36,17 +86,81 @@ int startsWithTwoDashes(char* arg)
     return 0;
 }
 
-
-struct commandFlagArgs
+struct commandFlagArgs parseCommandArguments(int argc, char **argv)
 {
-    int in, out, err;
-    char* cmd;
-    char** args;
-    int numArgs;
-};
-
-
-
+    struct commandFlagArgs result;
+    
+    optind--;
+    
+    int count = 0;
+    int cmdArgCount = 0;
+    
+    int optindAtFirstCmdArg = -1;
+    
+    while (optind < argc)
+    {
+        char* currArg = argv[optind];
+        
+        //check to see if the currArg starts with two dashes. If so, then break
+        if (startsWithTwoDashes(currArg))
+        {
+            break;
+        }
+        
+        switch (count)
+        {
+            case 0:
+                result.in = atoi(currArg);
+                break;
+            case 1:
+                result.out = atoi(currArg);
+                break;
+            case 2:
+                result.err = atoi(currArg);
+                break;
+            case 3:
+                result.cmd = currArg;
+                break;
+            case 4:
+                optindAtFirstCmdArg = optind;
+                cmdArgCount++;
+                break;
+            default: //one of cmd's arguments
+                cmdArgCount++;
+        }
+        
+        optind++;
+        count++;
+    }
+    
+    //if any arguments were passed to the --command flag
+    if (cmdArgCount > 0)
+    {
+        result.args = (char **) malloc(cmdArgCount * sizeof(char *));
+        
+        optind = optindAtFirstCmdArg;   //reset optind to the first command argument
+        
+        int pos = 0;
+        while (optind < argc)
+        {
+            char* currArg = argv[optind];
+            
+            //check to see if the currArg starts with two dashes. If so, then break
+            if (startsWithTwoDashes(currArg))
+            {
+                break;
+            }
+            
+            result.args[pos] = currArg;
+            optind++;
+            pos++;
+        }
+    }
+    
+    result.numArgs = cmdArgCount;
+    
+    return result;
+}
 
 void executeCommand(struct commandFlagArgs cmdArgs, int * FDarray)
 {
@@ -88,159 +202,17 @@ void executeCommand(struct commandFlagArgs cmdArgs, int * FDarray)
         }
         
         arguments[cmdArgs.numArgs + 1] = NULL;
-      
+        
         execvp(arguments[0], arguments);
     }
     else    //parent process
     {
-        //idk what to do
-        //int childPID = wait(NULL);
         //wait(NULL);
     }
 }
 
-struct commandFlagArgs parseCommandArguments(int argc, char **argv)
-{
-    struct commandFlagArgs result;
-    
-    optind--;
-    
-    int count = 0;
-    int cmdArgCount = 0;
-    
-    int optindAtFirstCmdArg = -1;
-    
-    while (optind < argc)
-    {
-        char* currArg = argv[optind];
-        
-        //check to see if the currArg starts with two dashes. If so, then break
-        if (startsWithTwoDashes(currArg))
-        {
-            break;
-        }
-        
-        switch (count)
-        {
-            case 0:
-                result.in = atoi(currArg);
-                break;
-            case 1:
-                result.out = atoi(currArg);
-                break;
-            case 2:
-                result.err = atoi(currArg);
-                break;
-            case 3:
-                count++;
-                count--;
-                //change this to something smarter!!!
-                //int argLength = strlen(currArg);
-                //result.cmd = (char*) malloc(argLength * sizeof(char));
-                //strcpy(result.cmd, currArg);
-                result.cmd = currArg;
-                break;
-            case 4:
-                optindAtFirstCmdArg = optind;
-                cmdArgCount++;
-                break;
-            default: //one of cmd's arguments
-                cmdArgCount++;
-        }
-        
-        optind++;
-        count++;
-    }
-    
-    //if any arguments were passed to the --command flag
-    if (cmdArgCount > 0)
-    {
-        result.args = (char **) malloc(cmdArgCount * sizeof(char *));
-        //char * WHYDOESNTTHISWORK[cmdArgCount];
-        optind = optindAtFirstCmdArg;   //reset optind to the first command argument
-        
-        int pos = 0;
-        while (optind < argc)
-        {
-            char* currArg = argv[optind];
-            
-            //check to see if the currArg starts with two dashes. If so, then break
-            if (startsWithTwoDashes(currArg))
-            {
-                break;
-            }
-            
-            result.args[pos] = currArg;
-            //WHYDOESNTTHISWORK[pos] = currArg;
-            optind++;
-            pos++;
-        }
-    }
-    
-    //result.args = WHYDOESNTTHISWORK; //NEW
-    result.numArgs = cmdArgCount;
-    
-    return result;
-}
-
-//int openFile(char* fileName, int permission, int* FDs, int position)
-int openFile(char* fileName, int permission, int** FDs, int position)
-{
-    int openFileReturnStatus = 0;
-    
-    //first, open the file, setting it to the lowest unused file descriptor
-    int fileDescriptor = open(fileName, permission);
-    
-    if (fileDescriptor < 0) //if an error occurred opening the file
-    {
-        //errno contains the error number
-        //strerror then takes the error number as a parameter, and then returns a string describing the error
-        fprintf(stderr, "Error #%d: %s\n", errno, strerror(errno));
-        fprintf(stderr, "Error caused when trying to open the following file name: %s\n", fileName);
-        openFileReturnStatus = 1;
-    }
-    
-    //then, add the file descriptor to our array of file descriptors
-    //if the open was successful, the file descriptor of 'fileName' will be added to the array
-    //if the open failed, then -1 will be added to the array
-    
-    //OLD
-    //FDs[position] = fileDescriptor;
-    //FDs = realloc(FDs, (position + 2) * sizeof(int));
-    
-    //NEW
-    (*FDs)[position] = fileDescriptor;
-    *FDs = realloc(*FDs, (position + 2) * sizeof(int));
-
-    return openFileReturnStatus;
-}
-
-int checkFileDescriptors(int in, int out, int err, int fileDescriptorNum)
-{
-    int valid = 1;
-    if (in < 0 || in >= fileDescriptorNum)
-    {
-        fprintf(stderr, "Error: invalid file descriptor passed to --command for stdin: %d\n", in);
-        valid = 0;
-    }
-    if (out < 0 || out >= fileDescriptorNum)
-    {
-        fprintf(stderr, "Error: invalid file descriptor passed to --command for stdout: %d\n", out);
-        valid = 0;
-    }
-    if (err < 0 || err >= fileDescriptorNum)
-    {
-        fprintf(stderr, "Error: invalid file descriptor passed to --command for stderr: %d\n", err);
-        valid = 0;
-    }
-    
-    return valid;
-}
-
 int main(int argc, char **argv)
 {
-    
-    //FIGURE OUT HOW TO HANDLE EXITING
     int EXITSTATUS = 0;
     
     static struct option long_options[] =
@@ -254,14 +226,8 @@ int main(int argc, char **argv)
 
     //when we open a file, we put its file descriptor in the lowest available spot in the fileDescriptors array
     //if the file fails to open, we put a -1 in the array
-    
-    
-    
     int * fileDescriptors = (int *) malloc(sizeof(int));
-    //LETS TRY JUST 100
-    //int fileDescriptors[100];
-    
-    
+ 
     int fileDescriptorNum = 0;
     
     int optResult;
@@ -283,8 +249,6 @@ int main(int argc, char **argv)
                     printf("--rdonly %s\n", optarg);
                 }
                 
-                
-                //int rdOnlyReturnStatus = openFile(optarg, O_RDONLY, fileDescriptors, fileDescriptorNum);
                 int rdOnlyReturnStatus = openFile(optarg, O_RDONLY, &fileDescriptors, fileDescriptorNum);
                 
                 if (rdOnlyReturnStatus)
@@ -299,10 +263,7 @@ int main(int argc, char **argv)
                     printf("--wronly %s\n", optarg);
                 }
                 
-                
-                //int wrOnlyReturnStatus = openFile(optarg, O_WRONLY, fileDescriptors, fileDescriptorNum);
                 int wrOnlyReturnStatus = openFile(optarg, O_WRONLY, &fileDescriptors, fileDescriptorNum);
-                
                 
                 if (wrOnlyReturnStatus)
                 {
@@ -311,21 +272,9 @@ int main(int argc, char **argv)
                 fileDescriptorNum++;
                 break;
             case 'c':
-                //just to appease the compiler for now
-                verbose--; verbose++;
+                ;   //empty statement because you can't have declaration after a label in C
                 //create an instance of the struct
                 struct commandFlagArgs cmdArgs = parseCommandArguments(argc, argv);
-                
-                //for testing
-//                printf("in: %d\n", cmdArgs.in);
-//                printf("out: %d\n", cmdArgs.out);
-//                printf("err: %d\n", cmdArgs.err);
-//                printf("cmd: %s\n", cmdArgs.cmd);
-//                printf("numArgs: %d\n", cmdArgs.numArgs);
-//                for (int i = 0; i < cmdArgs.numArgs; i++)
-//                {
-//                    printf("arg #%d: %s\n", i+1, cmdArgs.args[i]);
-//                }
                 
                 if (verbose)
                 {
@@ -350,8 +299,7 @@ int main(int argc, char **argv)
                     EXITSTATUS = 1;
                 }
                 
-                //fr-- memory
-                //free(cmdArgs.cmd);
+                //free memory
                 if (cmdArgs.numArgs > 0)
                 {
                     free(cmdArgs.args);
