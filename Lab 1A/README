@@ -1,0 +1,28 @@
+NAME: Bradley Mont
+EMAIL: bradleymont@gmail.com
+ID: 804993030
+
+Description of Included Files
+
+lab1a.c: This file contains the source code for a simple, stripped down shell. This shell allows programmers to interact solely through command line arguments, instead of scripting languages and individual terminal commands. Currently, the program supports adding files in read-only or write only mode, and it also supports executing standard shell commands using user-specified file descriptors. Also, users can use the --verbose flag to output each option to standard output right before its execution.
+
+Makefile: This file builds the program and has the following targets:
+1. default: uses gcc to build the simpsh executable. Compiles with -Wall -Wextra -g options
+2. check: runs basic test cases to test the basic functionality of the program
+3. clean: resets the directory to its state before being tarred by deleting any files created by the Makefile
+4. dist: builds a tarball with all the necessary source files
+5. checkFileDNE: a target for check that tests the program's functionality when given a file that doesn't exist
+6. checkInvalidFD: a target for check that tests the program's functionality when given an invalid file descriptor to the --command flag
+7. checkSuccessfulCommand: a target for check that tests the program's functionality when given perfect input for the --command flag
+
+Known Limitations
+
+For the --command flag, my code assumes that the first 3 arguments passed are integers (to represent file descriptors) and the 4th argument is a valid command (that I will execute using execvp(3)). Additionally, my code does not handle extreme edge cases beyond those covered in the testing script. Obviously, my code does not have every flag implemented (those will be implemented in Lab 1B).
+
+Extra Features: None
+
+Sources
+
+TA Alex Tiard's Powerpoint: https://ccle.ucla.edu/pluginfile.php/2667943/mod_resource/content/0/Project_1_winter19.pdf
+man pages for all the commands used in the lab
+the section in the Three Easy Pieces textbook about using fork()

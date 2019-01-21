@@ -2,7 +2,7 @@
 // EMAIL: bradleymont@gmail.com
 // ID: 804993030
 
-#include <unistd.h> //for close(2), dup2(2), execvp(3), fork(2), getopt_long(3), pipe(2), execvp(3)
+#include <unistd.h> //for close(2), dup2(2), execvp(3), fork(2), getopt_long(3), pipe(2)
 #include <getopt.h> //for getopt_long(3)
 #include <fcntl.h> //for open(2)
 #include <signal.h> //for sigaction(2)
@@ -36,7 +36,8 @@ int openFile(char* fileName, int permission, int** FDs, int position)
     return openFileReturnStatus;
 }
 
-int checkFileDescriptors(int in, int out, int err, int fileDescriptorNum)
+//int checkFileDescriptors(int in, int out, int err, int fileDescriptorNum)
+int checkFileDescriptors(int in, int out, int err, int fileDescriptorNum, int * FDs)
 {
     int valid = 1;
     if (in < 0 || in >= fileDescriptorNum)
@@ -44,14 +45,31 @@ int checkFileDescriptors(int in, int out, int err, int fileDescriptorNum)
         fprintf(stderr, "Error: invalid file descriptor passed to --command for stdin: %d\n", in);
         valid = 0;
     }
+    else if (FDs[in] == -1)
+    {
+        fprintf(stderr, "Error: the file descriptor passed to --command for stdin (%d) contains a file that failed to open.\n", in);
+        valid = 0;
+    }
+    
     if (out < 0 || out >= fileDescriptorNum)
     {
         fprintf(stderr, "Error: invalid file descriptor passed to --command for stdout: %d\n", out);
         valid = 0;
     }
+    else if (FDs[out] == -1)
+    {
+        fprintf(stderr, "Error: the file descriptor passed to --command for stdout (%d) contains a file that failed to open.\n", out);
+        valid = 0;
+    }
+    
     if (err < 0 || err >= fileDescriptorNum)
     {
         fprintf(stderr, "Error: invalid file descriptor passed to --command for stderr: %d\n", err);
+        valid = 0;
+    }
+    else if (FDs[err] == -1)
+    {
+        fprintf(stderr, "Error: the file descriptor passed to --command for stderr (%d) contains a file that failed to open.\n", err);
         valid = 0;
     }
     
@@ -288,7 +306,8 @@ int main(int argc, char **argv)
 
                 //check that valid ints were passed for the file descriptors
                 //the fd should be >= 0 and < fileDescriptorNum
-                int validFdsPassed = checkFileDescriptors(cmdArgs.in, cmdArgs.out, cmdArgs.err, fileDescriptorNum);
+                //int validFdsPassed = checkFileDescriptors(cmdArgs.in, cmdArgs.out, cmdArgs.err, fileDescriptorNum);
+                int validFdsPassed = checkFileDescriptors(cmdArgs.in, cmdArgs.out, cmdArgs.err, fileDescriptorNum, fileDescriptors);
                 
                 if (validFdsPassed)
                 {
