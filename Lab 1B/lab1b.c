@@ -12,6 +12,9 @@
 #include <errno.h> //to get errno for error messages
 #include <sys/wait.h> //for wait(2)
 
+//TRY TO CONVERT VERBOSE TO JUST USING ARGV[OPTIND] INSTEAD OF HARD-CODED MESSAGES
+
+
 int openFile(char* fileName, int permission, int** FDs, int position)
 {
     int openFileReturnStatus = 0;
@@ -189,7 +192,7 @@ struct commandFlagArgs parseCommandArguments(int argc, char **argv)
     return result;
 }
 
-void executeCommand(struct commandFlagArgs cmdArgs, int * FDarray)
+void executeCommand(struct commandFlagArgs cmdArgs, int * FDarray, int numDescriptors)
 {
     int PID = fork();
     
@@ -206,19 +209,26 @@ void executeCommand(struct commandFlagArgs cmdArgs, int * FDarray)
         int newStdin = FDarray[cmdArgs.in];
         close(0);
         dup2(newStdin, 0);
-        close(newStdin);
         
         //update stdout
         int newStdout = FDarray[cmdArgs.out];
         close(1);
         dup2(newStdout, 1);
-        close(newStdout);
         
         //update stderr
         int newStderr = FDarray[cmdArgs.err];
         close(2);
         dup2(newStderr, 2);
-        close(newStderr);
+        
+        //close all file descriptors besides the 3 we are using for the command
+        for (int i = 0; i < numDescriptors; i++)
+        {
+            int fd = FDarray[i];
+            if (fd != -1)
+            {
+                close(fd);
+            }
+        }
         
         char* arguments[cmdArgs.numArgs + 2];
         arguments[0] = cmdArgs.cmd;
@@ -236,6 +246,45 @@ void executeCommand(struct commandFlagArgs cmdArgs, int * FDarray)
     {
         //wait(NULL);
     }
+}
+
+
+int openPipe(int **FDs, int position)
+{
+    int pipeReturnStatus = 0;
+    
+    int pipefd[2];
+    
+    //pipe stores the file descriptor of the read end of the pipe in pipefd[0] and the file descriptor of the write end of the pipe in pipefd[1]
+    //0 is returned on success, and -1 is returned on error
+    //pipe(2) does not modify pipefd on failure
+    int pipeSuccess = pipe(pipefd);
+    
+    if (pipeSuccess < 0) //if an error occurred opening the file
+    {
+        //errno contains the error number
+        //strerror then takes the error number as a parameter, and then returns a string describing the error
+        fprintf(stderr, "Error #%d: %s\n", errno, strerror(errno));
+        fprintf(stderr, "Error caused when trying to create a pipe\n");
+        
+        pipefd[0] = -1;
+        pipefd[1] = -1;
+        
+        pipeReturnStatus = 1;
+        
+    }
+    
+    //if the pipe was successful, the file descriptor for the read end of the pipe and the write end of the pipe will be added to the FD array
+    //if the open failed, then -1 will be added to the array (for both the read and write ends of the pipe)
+    
+    //add the read end of the file descriptor to the array
+    (*FDs)[position] = pipefd[0];
+    
+    *FDs = realloc(*FDs, (position + 4) * sizeof(int));
+    
+    (*FDs)[position + 1] = pipefd[1];
+    
+    return pipeReturnStatus;
 }
 
 int main(int argc, char **argv)
@@ -263,6 +312,7 @@ int main(int argc, char **argv)
         {"rdonly",    required_argument, NULL,           'r'},
         {"wronly",    required_argument, NULL,           'w'},
         {"rdwr",      required_argument, NULL,           'b'},  //b for both reading and writing
+        {"pipe",      no_argument,       NULL,           'p'},
         {"command",   required_argument, NULL,           'c'},
         {"verbose",   no_argument,       NULL,           'v'},
         {"append",    no_argument,       &fileFlags[0],  O_APPEND},
@@ -297,6 +347,12 @@ int main(int argc, char **argv)
         
         //getopt_long returns -1 if all command-line options have been parsed (getopt man page)
         if (optResult == -1) break; //break out of the loop after parsing all arguments
+        
+        //verbose option for file flags
+        if (optResult == 0 && verbose)
+        {
+            printf("%s\n", argv[optind - 1]);
+        }
         
         switch (optResult)
         {
@@ -384,6 +440,21 @@ int main(int argc, char **argv)
                 }
                 
                 break;
+            case 'p':
+                if (verbose)
+                {
+                    printf("--pipe\n");
+                }
+                
+                int pipeReturnStatus = openPipe(&fileDescriptors, fileDescriptorNum);
+                
+                if (pipeReturnStatus)
+                {
+                    EXITSTATUS = 1;
+                }
+                
+                fileDescriptorNum += 2;
+                break;
             case 'c':
                 ;   //empty statement because you can't have declaration after a label in C
                 //create an instance of the struct
@@ -413,7 +484,8 @@ int main(int argc, char **argv)
                 
                 if (validFdsPassed)
                 {
-                    executeCommand(cmdArgs, fileDescriptors);
+                    //executeCommand(cmdArgs, fileDescriptors);
+                    executeCommand(cmdArgs, fileDescriptors, fileDescriptorNum);
                 }
                 else  //an invalid file descriptor number passed
                 {
