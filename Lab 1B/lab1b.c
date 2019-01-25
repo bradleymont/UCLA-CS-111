@@ -15,6 +15,16 @@
 //TRY TO CONVERT VERBOSE TO JUST USING ARGV[OPTIND] INSTEAD OF HARD-CODED MESSAGES
 
 
+
+void segFaultHandler(int signum)
+{
+    fprintf(stderr, "Signal %d caught.\n", signum);
+    exit(signum);
+}
+
+
+
+
 int openFile(char* fileName, int permission, int** FDs, int position)
 {
     int openFileReturnStatus = 0;
@@ -40,6 +50,43 @@ int openFile(char* fileName, int permission, int** FDs, int position)
     return openFileReturnStatus;
 }
 
+int openPipe(int **FDs, int position)
+{
+    int pipeReturnStatus = 0;
+    
+    int pipefd[2];
+    
+    //pipe stores the file descriptor of the read end of the pipe in pipefd[0] and the file descriptor of the write end of the pipe in pipefd[1]
+    //0 is returned on success, and -1 is returned on error
+    //pipe(2) does not modify pipefd on failure
+    int pipeSuccess = pipe(pipefd);
+    
+    if (pipeSuccess < 0) //if an error occurred opening the file
+    {
+        //errno contains the error number
+        //strerror then takes the error number as a parameter, and then returns a string describing the error
+        fprintf(stderr, "Error #%d: %s\n", errno, strerror(errno));
+        fprintf(stderr, "Error caused when trying to create a pipe\n");
+        
+        pipefd[0] = -1;
+        pipefd[1] = -1;
+        
+        pipeReturnStatus = 1;
+    }
+    
+    //if the pipe was successful, the file descriptor for the read end of the pipe and the write end of the pipe will be added to the FD array
+    //if the open failed, then -1 will be added to the array (for both the read and write ends of the pipe)
+    
+    //add the read end of the file descriptor to the array
+    (*FDs)[position] = pipefd[0];
+    
+    *FDs = realloc(*FDs, (position + 4) * sizeof(int));
+    
+    (*FDs)[position + 1] = pipefd[1];
+    
+    return pipeReturnStatus;
+}
+
 //int checkFileDescriptors(int in, int out, int err, int fileDescriptorNum)
 int checkFileDescriptors(int in, int out, int err, int fileDescriptorNum, int * FDs)
 {
@@ -51,7 +98,7 @@ int checkFileDescriptors(int in, int out, int err, int fileDescriptorNum, int * 
     }
     else if (FDs[in] == -1)
     {
-        fprintf(stderr, "Error: the file descriptor passed to --command for stdin (%d) contains a file that failed to open.\n", in);
+        fprintf(stderr, "Error: the file descriptor passed to --command for stdin (%d) contains a file that failed to open or has been closed.\n", in);
         valid = 0;
     }
     
@@ -62,7 +109,7 @@ int checkFileDescriptors(int in, int out, int err, int fileDescriptorNum, int * 
     }
     else if (FDs[out] == -1)
     {
-        fprintf(stderr, "Error: the file descriptor passed to --command for stdout (%d) contains a file that failed to open.\n", out);
+        fprintf(stderr, "Error: the file descriptor passed to --command for stdout (%d) contains a file that failed to open or has been closed.\n", out);
         valid = 0;
     }
     
@@ -73,7 +120,7 @@ int checkFileDescriptors(int in, int out, int err, int fileDescriptorNum, int * 
     }
     else if (FDs[err] == -1)
     {
-        fprintf(stderr, "Error: the file descriptor passed to --command for stderr (%d) contains a file that failed to open.\n", err);
+        fprintf(stderr, "Error: the file descriptor passed to --command for stderr (%d) contains a file that failed to open or has been closed.\n", err);
         valid = 0;
     }
     
@@ -248,45 +295,6 @@ void executeCommand(struct commandFlagArgs cmdArgs, int * FDarray, int numDescri
     }
 }
 
-
-int openPipe(int **FDs, int position)
-{
-    int pipeReturnStatus = 0;
-    
-    int pipefd[2];
-    
-    //pipe stores the file descriptor of the read end of the pipe in pipefd[0] and the file descriptor of the write end of the pipe in pipefd[1]
-    //0 is returned on success, and -1 is returned on error
-    //pipe(2) does not modify pipefd on failure
-    int pipeSuccess = pipe(pipefd);
-    
-    if (pipeSuccess < 0) //if an error occurred opening the file
-    {
-        //errno contains the error number
-        //strerror then takes the error number as a parameter, and then returns a string describing the error
-        fprintf(stderr, "Error #%d: %s\n", errno, strerror(errno));
-        fprintf(stderr, "Error caused when trying to create a pipe\n");
-        
-        pipefd[0] = -1;
-        pipefd[1] = -1;
-        
-        pipeReturnStatus = 1;
-        
-    }
-    
-    //if the pipe was successful, the file descriptor for the read end of the pipe and the write end of the pipe will be added to the FD array
-    //if the open failed, then -1 will be added to the array (for both the read and write ends of the pipe)
-    
-    //add the read end of the file descriptor to the array
-    (*FDs)[position] = pipefd[0];
-    
-    *FDs = realloc(*FDs, (position + 4) * sizeof(int));
-    
-    (*FDs)[position + 1] = pipefd[1];
-    
-    return pipeReturnStatus;
-}
-
 int main(int argc, char **argv)
 {
     int EXITSTATUS = 0;
@@ -315,6 +323,12 @@ int main(int argc, char **argv)
         {"pipe",      no_argument,       NULL,           'p'},
         {"command",   required_argument, NULL,           'c'},
         {"verbose",   no_argument,       NULL,           'v'},
+        {"abort",     no_argument,       NULL,           'a'},
+        {"catch",     required_argument, NULL,           'h'},
+        {"ignore",    required_argument, NULL,           'i'},
+        {"default",   required_argument, NULL,           'd'},
+        {"pause",     no_argument,       NULL,           'u'},
+        {"close",     required_argument, NULL,           'x'},
         {"append",    no_argument,       &fileFlags[0],  O_APPEND},
         {"cloexec",   no_argument,       &fileFlags[1],  O_CLOEXEC},
         {"creat",     no_argument,       &fileFlags[2],  O_CREAT},
@@ -484,7 +498,6 @@ int main(int argc, char **argv)
                 
                 if (validFdsPassed)
                 {
-                    //executeCommand(cmdArgs, fileDescriptors);
                     executeCommand(cmdArgs, fileDescriptors, fileDescriptorNum);
                 }
                 else  //an invalid file descriptor number passed
@@ -500,6 +513,62 @@ int main(int argc, char **argv)
                 break;
             case 'v':
                 verbose = 1;
+                break;
+            case 'a':
+                if (verbose)
+                {
+                    char* msg = "--abort\n";
+                    write(1, msg, strlen(msg));
+                }
+                char* will_cause_segfault = NULL;
+                *will_cause_segfault = 'f'; //dereferencing a null pointer will cause a segmentation fault
+                break;
+            case 'h': //--catch
+                if (verbose)
+                {
+                    printf("--catch %s\n", optarg);
+                }
+                
+                
+                signal(atoi(optarg), segFaultHandler);
+                
+                
+                break;
+            case 'i':
+                if (verbose)
+                {
+                    printf("--ignore %s\n", optarg);
+                }
+                
+                signal(atoi(optarg), SIG_IGN);
+                break;
+            case 'd':
+                if (verbose)
+                {
+                    printf("--default %s\n", optarg);
+                }
+                
+                signal(atoi(optarg), SIG_DFL);
+                
+                break;
+            case 'u':   //pause
+                if (verbose)
+                {
+                    printf("--pause\n");
+                }
+                
+                pause();
+                
+                break;
+            case 'x':
+                if (verbose)
+                {
+                    printf("--close %s\n", optarg);
+                }
+                
+                int fdToClose = fileDescriptors[atoi(optarg)];
+                close(fdToClose);
+                fileDescriptors[atoi(optarg)] = -1;
                 break;
             case '?':
                 fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab1a --rdonly [fileName] --wronly [fileName] --command [stdin] [stdout] [stderr] [executable] [args] --verbose\n");
