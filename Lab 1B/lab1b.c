@@ -12,19 +12,6 @@
 #include <errno.h> //to get errno for error messages
 #include <sys/wait.h> //for wait(2)
 
-//TRY TO CONVERT VERBOSE TO JUST USING ARGV[OPTIND] INSTEAD OF HARD-CODED MESSAGES
-
-
-
-void segFaultHandler(int signum)
-{
-    fprintf(stderr, "Signal %d caught.\n", signum);
-    exit(signum);
-}
-
-
-
-
 int openFile(char* fileName, int permission, int** FDs, int position)
 {
     int openFileReturnStatus = 0;
@@ -295,6 +282,12 @@ void executeCommand(struct commandFlagArgs cmdArgs, int * FDarray, int numDescri
     }
 }
 
+void segFaultHandler(int signum)
+{
+    fprintf(stderr, "Signal %d caught.\n", signum);
+    exit(signum);
+}
+
 int main(int argc, char **argv)
 {
     int EXITSTATUS = 0;
@@ -362,20 +355,36 @@ int main(int argc, char **argv)
         //getopt_long returns -1 if all command-line options have been parsed (getopt man page)
         if (optResult == -1) break; //break out of the loop after parsing all arguments
         
-        //verbose option for file flags
-        if (optResult == 0 && verbose)
+        //if the user passed the --verbose flag, output each option
+        if (verbose)
         {
-            printf("%s\n", argv[optind - 1]);
+            switch (optResult)
+            {
+                case   0:
+                case 'p':
+                case 'u':
+                    printf("%s\n", argv[optind - 1]);
+                    break;
+                case 'r':
+                case 'w':
+                case 'b':
+                case 'h':
+                case 'i':
+                case 'd':
+                case 'x':
+                    printf("%s %s\n", argv[optind - 2], optarg);
+                    break;
+                case 'a':
+                    ;   //empty statement because you can't have declaration after a label in C
+                    char* msg = "--abort\n";
+                    write(1, "--abort\n", strlen(msg));
+                    break;
+            }
         }
         
         switch (optResult)
         {
             case 'r':
-                if (verbose)
-                {
-                    printf("--rdonly %s\n", optarg);
-                }
-                
                 filePermission = O_RDONLY;
                 
                 for (int i = 0; i < 11; i++)    //apply any file flags currently activated
@@ -399,11 +408,6 @@ int main(int argc, char **argv)
                 
                 break;
             case 'w':
-                if (verbose)
-                {
-                    printf("--wronly %s\n", optarg);
-                }
-                
                 filePermission = O_WRONLY;
                 
                 for (int i = 0; i < 11; i++) //apply any file flags currently activated
@@ -427,10 +431,6 @@ int main(int argc, char **argv)
                 
                 break;
             case 'b':
-                if (verbose)
-                {
-                    printf("--rdwr %s\n", optarg);
-                }
                 
                 filePermission = O_RDWR;
                 
@@ -455,10 +455,7 @@ int main(int argc, char **argv)
                 
                 break;
             case 'p':
-                if (verbose)
-                {
-                    printf("--pipe\n");
-                }
+                ;   //empty statement because you can't have declaration after a label in C
                 
                 int pipeReturnStatus = openPipe(&fileDescriptors, fileDescriptorNum);
                 
@@ -515,57 +512,24 @@ int main(int argc, char **argv)
                 verbose = 1;
                 break;
             case 'a':
-                if (verbose)
-                {
-                    char* msg = "--abort\n";
-                    write(1, msg, strlen(msg));
-                }
+                ;   //empty statement because you can't have declaration after a label in C
                 char* will_cause_segfault = NULL;
                 *will_cause_segfault = 'f'; //dereferencing a null pointer will cause a segmentation fault
                 break;
             case 'h': //--catch
-                if (verbose)
-                {
-                    printf("--catch %s\n", optarg);
-                }
-                
-                
                 signal(atoi(optarg), segFaultHandler);
-                
-                
                 break;
             case 'i':
-                if (verbose)
-                {
-                    printf("--ignore %s\n", optarg);
-                }
-                
                 signal(atoi(optarg), SIG_IGN);
                 break;
             case 'd':
-                if (verbose)
-                {
-                    printf("--default %s\n", optarg);
-                }
-                
                 signal(atoi(optarg), SIG_DFL);
-                
                 break;
             case 'u':   //pause
-                if (verbose)
-                {
-                    printf("--pause\n");
-                }
-                
                 pause();
-                
                 break;
             case 'x':
-                if (verbose)
-                {
-                    printf("--close %s\n", optarg);
-                }
-                
+                ;   //empty statement because you can't have declaration after a label in C
                 int fdToClose = fileDescriptors[atoi(optarg)];
                 close(fdToClose);
                 fileDescriptors[atoi(optarg)] = -1;
