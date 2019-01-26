@@ -12,6 +12,10 @@
 #include <errno.h> //to get errno for error messages
 #include <sys/wait.h> //for wait(2)
 
+
+//I USED MALLOC FOR THE WAIT STRING - FREE IT
+
+
 int openFile(char* fileName, int permission, int** FDs, int position)
 {
     int openFileReturnStatus = 0;
@@ -226,16 +230,22 @@ struct commandFlagArgs parseCommandArguments(int argc, char **argv)
     return result;
 }
 
-void executeCommand(struct commandFlagArgs cmdArgs, int * FDarray, int numDescriptors)
+struct childProcess
 {
-    int PID = fork();
+    int PID;
+    char* commandPlusArgs;
+};
+
+struct childProcess executeCommand(struct commandFlagArgs cmdArgs, int * FDarray, int numDescriptors)
+{
+    int childPID = fork();
     
-    if (PID < 0)    //the fork failed
+    if (childPID < 0)    //the fork failed
     {
         fprintf(stderr, "Error: fork command failed.\n");
         exit(1);
     }
-    else if (PID == 0)  //child process
+    else if (childPID == 0)  //child process
     {
         //IO REDIRECTION
         
@@ -278,8 +288,41 @@ void executeCommand(struct commandFlagArgs cmdArgs, int * FDarray, int numDescri
     }
     else    //parent process
     {
-        //wait(NULL);
+       
     }
+    
+    
+    
+    
+    
+    
+    //////////
+    struct childProcess result;
+    result.PID = childPID;
+
+    //form string
+    int cStringLength = strlen(cmdArgs.cmd) + 1;  //+1 to make room for null byte to terminate the string
+    
+    
+    for (int i = 0; i < cmdArgs.numArgs; i++)
+    {
+        cStringLength += strlen(cmdArgs.args[i]) + 1; //+1 for the space before it
+    }
+    
+    char* argsString = malloc(cStringLength);
+    
+    strcat(argsString, cmdArgs.cmd);
+    
+    for (int i = 0; i < cmdArgs.numArgs; i++)
+    {
+        strcat(argsString, " ");
+        strcat(argsString, cmdArgs.args[i]);
+    }
+    
+    result.commandPlusArgs = argsString;
+    
+    
+    return result;
 }
 
 void segFaultHandler(int signum)
@@ -315,6 +358,7 @@ int main(int argc, char **argv)
         {"rdwr",      required_argument, NULL,           'b'},  //b for both reading and writing
         {"pipe",      no_argument,       NULL,           'p'},
         {"command",   required_argument, NULL,           'c'},
+        {"wait",       no_argument,      NULL,           't'},
         {"verbose",   no_argument,       NULL,           'v'},
         {"abort",     no_argument,       NULL,           'a'},
         {"catch",     required_argument, NULL,           'h'},
@@ -348,6 +392,10 @@ int main(int argc, char **argv)
     
     int filePermission;
     
+    struct childProcess * children = (struct childProcess *) malloc(sizeof(struct childProcess));
+    
+    int numChildren = 0;
+    
     while (1)
     {
         optResult = getopt_long(argc, argv, "", long_options, NULL);
@@ -363,7 +411,10 @@ int main(int argc, char **argv)
                 case   0:
                 case 'p':
                 case 'u':
-                    printf("%s\n", argv[optind - 1]);
+                case 'a':
+                case 't':
+                    write(1, argv[optind - 1], strlen(argv[optind - 1]));
+                    write(1, "\n", 1);
                     break;
                 case 'r':
                 case 'w':
@@ -372,12 +423,10 @@ int main(int argc, char **argv)
                 case 'i':
                 case 'd':
                 case 'x':
-                    printf("%s %s\n", argv[optind - 2], optarg);
-                    break;
-                case 'a':
-                    ;   //empty statement because you can't have declaration after a label in C
-                    char* msg = "--abort\n";
-                    write(1, "--abort\n", strlen(msg));
+                    write(1, argv[optind - 2], strlen(argv[optind - 2]));
+                    write(1, " ", 1);
+                    write(1, optarg, strlen(optarg));
+                    write(1, "\n", 1);
                     break;
             }
         }
@@ -495,7 +544,12 @@ int main(int argc, char **argv)
                 
                 if (validFdsPassed)
                 {
-                    executeCommand(cmdArgs, fileDescriptors, fileDescriptorNum);
+                    //executeCommand(cmdArgs, fileDescriptors, fileDescriptorNum);
+                    struct childProcess child = executeCommand(cmdArgs, fileDescriptors, fileDescriptorNum);
+                    
+                    children[numChildren] = child;
+                    children = realloc(children, (numChildren + 2) * sizeof(struct childProcess));
+                    numChildren++;
                 }
                 else  //an invalid file descriptor number passed
                 {
@@ -534,6 +588,19 @@ int main(int argc, char **argv)
                 close(fdToClose);
                 fileDescriptors[atoi(optarg)] = -1;
                 break;
+            case 't': //wait
+                
+                for (int i = 0; i < numChildren; i++)
+                {
+                    int status;
+                    int waitReturn = waitpid(children[i].PID, &status, 0);
+                    
+                    printf("exit %d %s\n", WEXITSTATUS(status), children[i].commandPlusArgs);
+                    
+                    free(children[i].commandPlusArgs);
+                }
+                
+                break;
             case '?':
                 fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab1a --rdonly [fileName] --wronly [fileName] --command [stdin] [stdout] [stderr] [executable] [args] --verbose\n");
                 EXITSTATUS = 1;
@@ -543,6 +610,7 @@ int main(int argc, char **argv)
     
     //free dynamically allocated memory
     free(fileDescriptors);
+    free(children);
     
     return EXITSTATUS;
 }
