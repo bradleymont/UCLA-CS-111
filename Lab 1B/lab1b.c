@@ -12,9 +12,14 @@
 #include <errno.h> //to get errno for error messages
 #include <sys/wait.h> //for wait(2)
 
-
-//I USED MALLOC FOR THE WAIT STRING - FREE IT
-
+int max(int a, int b)
+{
+    if (a > b)
+    {
+        return a;
+    }
+    return b;
+}
 
 int openFile(char* fileName, int permission, int** FDs, int position)
 {
@@ -445,7 +450,7 @@ int main(int argc, char **argv)
                 
                 if (rdOnlyReturnStatus)
                 {
-                    EXITSTATUS = 1;
+                    EXITSTATUS = max(EXITSTATUS, 1);
                 }
                 fileDescriptorNum++;
                 
@@ -468,7 +473,7 @@ int main(int argc, char **argv)
                 
                 if (wrOnlyReturnStatus)
                 {
-                    EXITSTATUS = 1;
+                    EXITSTATUS = max(EXITSTATUS, 1);
                 }
                 fileDescriptorNum++;
                 
@@ -492,7 +497,7 @@ int main(int argc, char **argv)
                 
                 if (rdwrReturnStatus)
                 {
-                    EXITSTATUS = 1;
+                    EXITSTATUS = max(EXITSTATUS, 1);
                 }
                 fileDescriptorNum++;
                 
@@ -510,7 +515,7 @@ int main(int argc, char **argv)
                 
                 if (pipeReturnStatus)
                 {
-                    EXITSTATUS = 1;
+                    EXITSTATUS = max(EXITSTATUS, 1);
                 }
                 
                 fileDescriptorNum += 2;
@@ -533,7 +538,7 @@ int main(int argc, char **argv)
                 if (cmdArgs.validArgs == 0) //if not enough arguments were to passed to --command
                 {
                     fprintf(stderr, "Error: missing arguments for --command flag.\nUsage: --command [stdin] [stdout] [stderr] [command] [args]\n");
-                    EXITSTATUS = 1;
+                    EXITSTATUS = max(EXITSTATUS, 1);
                     break;
                 }
 
@@ -553,7 +558,7 @@ int main(int argc, char **argv)
                 }
                 else  //an invalid file descriptor number passed
                 {
-                    EXITSTATUS = 1;
+                    EXITSTATUS = max(EXITSTATUS, 1);
                 }
                 
                 //free memory
@@ -595,7 +600,29 @@ int main(int argc, char **argv)
                     int status;
                     int waitReturn = waitpid(children[i].PID, &status, 0);
                     
-                    printf("exit %d %s\n", WEXITSTATUS(status), children[i].commandPlusArgs);
+                    if (waitReturn == -1)
+                    {
+                        //fprintf(stderr, "Error with wait\n");
+                        //EXITSTATUS = max(EXITSTATUS, 1);
+                        continue;
+                    }
+                    
+                    if (WIFEXITED(status))  //if the child terminated normally
+                    {
+                        printf("exit %d %s\n", WEXITSTATUS(status), children[i].commandPlusArgs);
+                        
+                        
+                        EXITSTATUS = max(EXITSTATUS, WEXITSTATUS(status));
+                        
+                    }
+                    
+                    if (WIFSIGNALED(status))  //if the child exited with a signal
+                    {
+                        printf("signal %d %s\n", WTERMSIG(status), children[i].commandPlusArgs);
+                        
+                        
+                        EXITSTATUS = max(EXITSTATUS, WTERMSIG(status));
+                    }
                     
                     free(children[i].commandPlusArgs);
                 }
@@ -603,7 +630,7 @@ int main(int argc, char **argv)
                 break;
             case '?':
                 fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab1a --rdonly [fileName] --wronly [fileName] --command [stdin] [stdout] [stderr] [executable] [args] --verbose\n");
-                EXITSTATUS = 1;
+                EXITSTATUS = max(EXITSTATUS, 1);
                 break;
         }
     }
