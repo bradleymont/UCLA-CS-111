@@ -35,6 +35,7 @@ int openFile(char* fileName, int permission, int** FDs, int position)
         //strerror then takes the error number as a parameter, and then returns a string describing the error
         fprintf(stderr, "Error #%d: %s\n", errno, strerror(errno));
         fprintf(stderr, "Error caused when trying to open the following file name: %s\n", fileName);
+        fflush(stderr);
         openFileReturnStatus = 1;
     }
     
@@ -63,6 +64,7 @@ int openPipe(int **FDs, int position)
         //strerror then takes the error number as a parameter, and then returns a string describing the error
         fprintf(stderr, "Error #%d: %s\n", errno, strerror(errno));
         fprintf(stderr, "Error caused when trying to create a pipe\n");
+        fflush(stderr);
         
         pipefd[0] = -1;
         pipefd[1] = -1;
@@ -90,33 +92,39 @@ int checkFileDescriptors(int in, int out, int err, int fileDescriptorNum, int * 
     if (in < 0 || in >= fileDescriptorNum)
     {
         fprintf(stderr, "Error: invalid file descriptor passed to --command for stdin: %d\n", in);
+        fflush(stderr);
         valid = 0;
     }
     else if (FDs[in] == -1)
     {
         fprintf(stderr, "Error: the file descriptor passed to --command for stdin (%d) contains a file that failed to open or has been closed.\n", in);
+        fflush(stderr);
         valid = 0;
     }
     
     if (out < 0 || out >= fileDescriptorNum)
     {
         fprintf(stderr, "Error: invalid file descriptor passed to --command for stdout: %d\n", out);
+        fflush(stderr);
         valid = 0;
     }
     else if (FDs[out] == -1)
     {
         fprintf(stderr, "Error: the file descriptor passed to --command for stdout (%d) contains a file that failed to open or has been closed.\n", out);
+        fflush(stderr);
         valid = 0;
     }
     
     if (err < 0 || err >= fileDescriptorNum)
     {
         fprintf(stderr, "Error: invalid file descriptor passed to --command for stderr: %d\n", err);
+        fflush(stderr);
         valid = 0;
     }
     else if (FDs[err] == -1)
     {
         fprintf(stderr, "Error: the file descriptor passed to --command for stderr (%d) contains a file that failed to open or has been closed.\n", err);
+        fflush(stderr);
         valid = 0;
     }
     
@@ -248,6 +256,7 @@ struct childProcess executeCommand(struct commandFlagArgs cmdArgs, int * FDarray
     if (childPID < 0)    //the fork failed
     {
         fprintf(stderr, "Error: fork command failed.\n");
+        fflush(stderr);
         exit(1);
     }
     else if (childPID == 0)  //child process
@@ -316,7 +325,8 @@ struct childProcess executeCommand(struct commandFlagArgs cmdArgs, int * FDarray
     
     char* argsString = malloc(cStringLength);
     
-    strcat(argsString, cmdArgs.cmd);
+    //strcat(argsString, cmdArgs.cmd);
+    strcpy(argsString, cmdArgs.cmd);
     
     for (int i = 0; i < cmdArgs.numArgs; i++)
     {
@@ -333,6 +343,7 @@ struct childProcess executeCommand(struct commandFlagArgs cmdArgs, int * FDarray
 void segFaultHandler(int signum)
 {
     fprintf(stderr, "Signal %d caught.\n", signum);
+    fflush(stderr);
     exit(signum);
 }
 
@@ -528,16 +539,22 @@ int main(int argc, char **argv)
                 if (verbose)
                 {
                     printf("--command %d %d %d %s", cmdArgs.in, cmdArgs.out, cmdArgs.err, cmdArgs.cmd);
+                    fflush(stdout);
+                    
                     for (int i = 0; i < cmdArgs.numArgs; i++)
                     {
                         printf(" %s", cmdArgs.args[i]);
+                        fflush(stdout);
+                        
                     }
                     printf("\n");
+                    fflush(stdout);
                 }
                 
                 if (cmdArgs.validArgs == 0) //if not enough arguments were to passed to --command
                 {
                     fprintf(stderr, "Error: missing arguments for --command flag.\nUsage: --command [stdin] [stdout] [stderr] [command] [args]\n");
+                    fflush(stderr);
                     EXITSTATUS = max(EXITSTATUS, 1);
                     break;
                 }
@@ -594,22 +611,35 @@ int main(int argc, char **argv)
                 fileDescriptors[atoi(optarg)] = -1;
                 break;
             case 't': //wait
-                
-                for (int i = 0; i < numChildren; i++)
+                while (1)
                 {
                     int status;
-                    int waitReturn = waitpid(children[i].PID, &status, 0);
+                    int childPID = wait(&status);
                     
-                    if (waitReturn == -1)
+                    if (childPID == -1)   //did not successfully wait for a child process
                     {
-                        //fprintf(stderr, "Error with wait\n");
-                        //EXITSTATUS = max(EXITSTATUS, 1);
-                        continue;
+                        break;
                     }
+                    
+                    
+                    //linear search for which process in my array matches the childPID
+                    int childIndex = -1;
+                    
+                    for (int i = 0; i < numChildren; i++)
+                    {
+                        if (childPID == children[i].PID)
+                        {
+                            childIndex = i;
+                            break;
+                        }
+                    }
+                    
+                    
                     
                     if (WIFEXITED(status))  //if the child terminated normally
                     {
-                        printf("exit %d %s\n", WEXITSTATUS(status), children[i].commandPlusArgs);
+                        printf("exit %d %s\n", WEXITSTATUS(status), children[childIndex].commandPlusArgs);
+                        fflush(stdout);
                         
                         
                         EXITSTATUS = max(EXITSTATUS, WEXITSTATUS(status));
@@ -618,18 +648,30 @@ int main(int argc, char **argv)
                     
                     if (WIFSIGNALED(status))  //if the child exited with a signal
                     {
-                        printf("signal %d %s\n", WTERMSIG(status), children[i].commandPlusArgs);
-                        
+                        printf("signal %d %s\n", WTERMSIG(status), children[childIndex].commandPlusArgs);
+                        fflush(stdout);
                         
                         EXITSTATUS = max(EXITSTATUS, WTERMSIG(status));
                     }
                     
+         
+                }
+                
+                //reset children array
+                for (int i = 0; i < numChildren; i++)
+                {
                     free(children[i].commandPlusArgs);
                 }
+                free(children);
+                
+                children = (struct childProcess *) malloc(sizeof(struct childProcess));
+                numChildren = 0;
+                
                 
                 break;
             case '?':
                 fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab1a --rdonly [fileName] --wronly [fileName] --command [stdin] [stdout] [stderr] [executable] [args] --verbose\n");
+                fflush(stderr);
                 EXITSTATUS = max(EXITSTATUS, 1);
                 break;
         }
