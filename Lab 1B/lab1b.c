@@ -351,6 +351,8 @@ int main(int argc, char **argv)
 {
     int EXITSTATUS = 0;
     
+    int maxSignal = -1;
+    
     //array of file flags
     static int fileFlags[11] = {0};
 
@@ -651,7 +653,8 @@ int main(int argc, char **argv)
                         printf("signal %d %s\n", WTERMSIG(status), children[childIndex].commandPlusArgs);
                         fflush(stdout);
                         
-                        EXITSTATUS = max(EXITSTATUS, WTERMSIG(status));
+                        //EXITSTATUS = max(EXITSTATUS, WTERMSIG(status));
+                        maxSignal = max(maxSignal, WTERMSIG(status));
                     }
                     
          
@@ -680,6 +683,12 @@ int main(int argc, char **argv)
     //free dynamically allocated memory
     free(fileDescriptors);
     free(children);
+    
+    if (maxSignal >= 0)
+    {
+        signal(maxSignal, SIG_DFL);
+        raise(maxSignal);
+    }
     
     return EXITSTATUS;
 }
