@@ -85,7 +85,6 @@ int openPipe(int **FDs, int position)
     return pipeReturnStatus;
 }
 
-//int checkFileDescriptors(int in, int out, int err, int fileDescriptorNum)
 int checkFileDescriptors(int in, int out, int err, int fileDescriptorNum, int * FDs)
 {
     int valid = 1;
@@ -305,18 +304,14 @@ struct childProcess executeCommand(struct commandFlagArgs cmdArgs, int * FDarray
        
     }
     
-    
-    
-    
-    
-    
-    //////////
+    //return a struct that contains the child PID and a c string contains the command plus its arguments
     struct childProcess result;
+    
+    //add the child PID to the struct
     result.PID = childPID;
 
-    //form string
+    //add the string of the command to the struct
     int cStringLength = strlen(cmdArgs.cmd) + 1;  //+1 to make room for null byte to terminate the string
-    
     
     for (int i = 0; i < cmdArgs.numArgs; i++)
     {
@@ -325,7 +320,6 @@ struct childProcess executeCommand(struct commandFlagArgs cmdArgs, int * FDarray
     
     char* argsString = malloc(cStringLength);
     
-    //strcat(argsString, cmdArgs.cmd);
     strcpy(argsString, cmdArgs.cmd);
     
     for (int i = 0; i < cmdArgs.numArgs; i++)
@@ -335,7 +329,6 @@ struct childProcess executeCommand(struct commandFlagArgs cmdArgs, int * FDarray
     }
     
     result.commandPlusArgs = argsString;
-    
     
     return result;
 }
@@ -373,7 +366,7 @@ int main(int argc, char **argv)
     {
         {"rdonly",    required_argument, NULL,           'r'},
         {"wronly",    required_argument, NULL,           'w'},
-        {"rdwr",      required_argument, NULL,           'b'},  //b for both reading and writing
+        {"rdwr",      required_argument, NULL,           'b'},
         {"pipe",      no_argument,       NULL,           'p'},
         {"command",   required_argument, NULL,           'c'},
         {"wait",       no_argument,      NULL,           't'},
@@ -568,7 +561,6 @@ int main(int argc, char **argv)
                 
                 if (validFdsPassed)
                 {
-                    //executeCommand(cmdArgs, fileDescriptors, fileDescriptorNum);
                     struct childProcess child = executeCommand(cmdArgs, fileDescriptors, fileDescriptorNum);
                     
                     children[numChildren] = child;
@@ -623,7 +615,6 @@ int main(int argc, char **argv)
                         break;
                     }
                     
-                    
                     //linear search for which process in my array matches the childPID
                     int childIndex = -1;
                     
@@ -636,14 +627,10 @@ int main(int argc, char **argv)
                         }
                     }
                     
-                    
-                    
                     if (WIFEXITED(status))  //if the child terminated normally
                     {
                         printf("exit %d %s\n", WEXITSTATUS(status), children[childIndex].commandPlusArgs);
                         fflush(stdout);
-                        
-                        
                         EXITSTATUS = max(EXITSTATUS, WEXITSTATUS(status));
                         
                     }
@@ -652,12 +639,8 @@ int main(int argc, char **argv)
                     {
                         printf("signal %d %s\n", WTERMSIG(status), children[childIndex].commandPlusArgs);
                         fflush(stdout);
-                        
-                        //EXITSTATUS = max(EXITSTATUS, WTERMSIG(status));
                         maxSignal = max(maxSignal, WTERMSIG(status));
                     }
-                    
-         
                 }
                 
                 //reset children array
@@ -666,11 +649,8 @@ int main(int argc, char **argv)
                     free(children[i].commandPlusArgs);
                 }
                 free(children);
-                
                 children = (struct childProcess *) malloc(sizeof(struct childProcess));
                 numChildren = 0;
-                
-                
                 break;
             case '?':
                 fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab1a --rdonly [fileName] --wronly [fileName] --command [stdin] [stdout] [stderr] [executable] [args] --verbose\n");
