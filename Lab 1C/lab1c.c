@@ -477,6 +477,7 @@ int main(int argc, char **argv)
             }
         }
         
+        //--profile option
         struct rusage preExecutionUsage;
         struct timeval preExecUserTime;
         struct timeval preExecSystemTime;
@@ -490,7 +491,6 @@ int main(int argc, char **argv)
         }
         
         int profilePassedThisIteration = 0;
-        
         
         switch (optResult)
         {
@@ -723,16 +723,11 @@ int main(int argc, char **argv)
                 profilePassedThisIteration = 1;
                 break;
             case '?':
-                fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab1a --rdonly [fileName] --wronly [fileName] --command [stdin] [stdout] [stderr] [executable] [args] --verbose\n");
+                fprintf(stderr, "Error: incorrect argument.\nUsage: ./simpsh --rdonly [fileName] --wronly [fileName] --command [stdin] [stdout] [stderr] [executable] [args] --verbose\n");
                 fflush(stderr);
                 EXITSTATUS = max(EXITSTATUS, 1);
                 break;
         }
-        
-        
-        
-        
-        
         
         if (profile && !profilePassedThisIteration)
         {
@@ -760,7 +755,7 @@ int main(int argc, char **argv)
                     write(1, "\t", 1);
                     break;
             }
-
+            
             //measure the user and system time after execution
             struct rusage postExecutionUsage;
             getrusage(RUSAGE_SELF, &postExecutionUsage);
@@ -781,7 +776,12 @@ int main(int argc, char **argv)
             timeval_subtract(&systemDiff, &postExecSystemTime, &preExecSystemTime);
             
             double systemTime = systemDiff.tv_sec + (systemDiff.tv_usec / 1000000.0);
-            printf("system: %fs\n", systemTime);
+            printf("system: %fs, ", systemTime);
+            fflush(stdout);
+            
+            //print total time as well
+            double totalTime = userTime + systemTime;
+            printf("total: %fs\n", totalTime);
             fflush(stdout);
         }
     }
@@ -792,13 +792,34 @@ int main(int argc, char **argv)
         getrusage(RUSAGE_CHILDREN, &childrenUsage);
         double userTime = childrenUsage.ru_utime.tv_sec + (childrenUsage.ru_utime.tv_usec / 1000000.0);
         double systemTime = childrenUsage.ru_stime.tv_sec + (childrenUsage.ru_stime.tv_usec / 1000000.0);
-        printf("children\tuser: %fs, system: %f\n", userTime, systemTime);
+        double totalTime = userTime + systemTime;
+        printf("children\tuser: %fs, system: %fs, total: %fs\n", userTime, systemTime, totalTime);
         fflush(stdout);
     }
     
     //free dynamically allocated memory
     free(fileDescriptors);
     free(children);
+    
+    /* for collecting data for benchmark tests
+    struct rusage totalSelfUsage;
+    getrusage(RUSAGE_SELF, &totalSelfUsage);
+    
+    double selfUserTime = totalSelfUsage.ru_utime.tv_sec + (totalSelfUsage.ru_utime.tv_usec / 1000000.0);
+    double selfSystemTime = totalSelfUsage.ru_stime.tv_sec + (totalSelfUsage.ru_stime.tv_usec / 1000000.0);
+    
+    struct rusage totalChildUsage;
+    getrusage(RUSAGE_CHILDREN, &totalChildUsage);
+    
+    double childUserTime = totalChildUsage.ru_utime.tv_sec + (totalChildUsage.ru_utime.tv_usec / 1000000.0);
+    double childSystemTime = totalChildUsage.ru_stime.tv_sec + (totalChildUsage.ru_stime.tv_usec / 1000000.0);
+    
+    double totalUserTime = selfUserTime + childUserTime;
+    double totalSystemTime = selfSystemTime + childSystemTime;
+    double totalTime = totalUserTime + totalSystemTime;
+    
+    printf("user time: %fs, system time: %fs, total time: %fs\n", totalUserTime, totalSystemTime, totalTime);
+    */
     
     if (maxSignal >= 0)
     {
