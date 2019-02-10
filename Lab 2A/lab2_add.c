@@ -9,11 +9,19 @@
 #include <string.h> //for atoi
 #include <stdio.h> //for fprintf(3)
 
+//global constants to represent each type of synchronization
+#define NO_LOCK 'n'
+#define MUTEX 'm'
+#define SPIN_LOCK 's'
+#define COMP_AND_SWAP 'c'
+
 //global variables
 long long counter = 0;
 int numThreads = 1;
 int numIterations = 1;
 int opt_yield = 0;
+
+char synchronization = NO_LOCK;
 
 void add(long long *pointer, long long value)
 {
@@ -37,6 +45,13 @@ void addCaller()
     }
 }
 
+void printUsage(int* exitStatus)
+{
+    fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab2_add --threads=[numThreads] --iterations=[numIterations] --sync=[m|s|c]\n");
+    fflush(stderr);
+    *exitStatus = 1;
+}
+
 int main(int argc, char **argv)
 {
     //note the (high resolution) starting time for the run
@@ -51,6 +66,7 @@ int main(int argc, char **argv)
         {"threads",    required_argument, NULL, 't'},
         {"iterations", required_argument, NULL, 'i'},
         {"yield",      no_argument,       NULL, 'y'},
+        {"sync",       required_argument, NULL, 's'},
         {0,            0,                 0,      0}
     };
     
@@ -81,10 +97,12 @@ int main(int argc, char **argv)
             case 'y':
                 opt_yield = 1;
                 break;
+            case 's':
+                synchronization = optarg[0];
+                //THINK ABOUT ERROR CHECKING LATER
+                break;
             case '?':
-                fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab2_add --threads=numThreads --iterations=numIterations\n");
-                fflush(stderr);
-                exitStatus = 1;
+                printUsage(&exitStatus);
                 break;
         }
     }
@@ -125,15 +143,48 @@ int main(int argc, char **argv)
     long long end = (endTime.tv_sec * 1000000000) + endTime.tv_nsec;
     
     //print CSV record
+    
+    
+    
+    
+    
     //name of the test, numThreads, numIterations, operationsPerformed, run time, avg time per operation, total at the end
     char testName[15];
-    if (opt_yield)
+    if (opt_yield)  //yield argument passed
     {
-        strcpy(testName, "add-yield-none");
+        switch (synchronization)
+        {
+            case NO_LOCK:
+                strcpy(testName, "add-yield-none");
+                break;
+            case MUTEX:
+                strcpy(testName, "add-yield-m");
+                break;
+            case SPIN_LOCK:
+                strcpy(testName, "add-yield-s");
+                break;
+            case COMP_AND_SWAP:
+                strcpy(testName, "add-yield-c");
+                break;
+        }
     }
     else //no yield
     {
-        strcpy(testName, "add-none");
+        switch (synchronization)
+        {
+            case NO_LOCK:
+                strcpy(testName, "add-none");
+                break;
+            case MUTEX:
+                strcpy(testName, "add-m");
+                break;
+            case SPIN_LOCK:
+                strcpy(testName, "add-s");
+                break;
+            case COMP_AND_SWAP:
+                strcpy(testName, "add-c");
+                break;
+        }
     }
     
     int numOperations = numThreads * numIterations * 2;
