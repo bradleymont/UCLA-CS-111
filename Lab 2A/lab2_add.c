@@ -13,10 +13,15 @@
 long long counter = 0;
 int numThreads = 1;
 int numIterations = 1;
+int opt_yield = 0;
 
 void add(long long *pointer, long long value)
 {
     long long sum = *pointer + value;
+    if (opt_yield)
+    {
+        sched_yield();
+    }
     *pointer = sum;
 }
 
@@ -37,8 +42,7 @@ int main(int argc, char **argv)
     //note the (high resolution) starting time for the run
     struct timespec startTime;
     clock_gettime(CLOCK_MONOTONIC, &startTime);
-    
-    int start = (startTime.tv_sec * 1000000000) + startTime.tv_nsec;
+    long long start = (startTime.tv_sec * 1000000000) + startTime.tv_nsec;
     
     int exitStatus = 0;
     
@@ -46,10 +50,13 @@ int main(int argc, char **argv)
     {
         {"threads",    required_argument, NULL, 't'},
         {"iterations", required_argument, NULL, 'i'},
+        {"yield",      no_argument,       NULL, 'y'},
         {0,            0,                 0,      0}
     };
     
     int optResult;
+    
+    //think about optional_argument vs required argument - checking optarg=null
     
     while (1)
     {
@@ -70,6 +77,9 @@ int main(int argc, char **argv)
                 {
                     numIterations = atoi(optarg);
                 }
+                break;
+            case 'y':
+                opt_yield = 1;
                 break;
             case '?':
                 fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab2_add --threads=numThreads --iterations=numIterations\n");
@@ -112,17 +122,25 @@ int main(int argc, char **argv)
     //note the (high resolution) end time
     struct timespec endTime;
     clock_gettime(CLOCK_MONOTONIC, &endTime);
-    
-    int end = (endTime.tv_sec * 1000000000) + endTime.tv_nsec;
+    long long end = (endTime.tv_sec * 1000000000) + endTime.tv_nsec;
     
     //print CSV record
     //name of the test, numThreads, numIterations, operationsPerformed, run time, avg time per operation, total at the end
-    char* testName = "add-none";
-    int numOperations = numThreads * numIterations * 2;
-    int runTime = end - start;
-    int avgTimePerOperation = runTime / numOperations;
+    char testName[15];
+    if (opt_yield)
+    {
+        strcpy(testName, "add-yield-none");
+    }
+    else //no yield
+    {
+        strcpy(testName, "add-none");
+    }
     
-    printf("%s,%d,%d,%d,%d,%d,%lld", testName, numThreads, numIterations, numOperations, runTime, avgTimePerOperation, counter);
+    int numOperations = numThreads * numIterations * 2;
+    long long runTime = end - start;
+    long long avgTimePerOperation = runTime / numOperations;
+    
+    printf("%s,%d,%d,%d,%lld,%lld,%lld", testName, numThreads, numIterations, numOperations, runTime, avgTimePerOperation, counter);
     printf("\n");
     fflush(stdout);
     
@@ -131,3 +149,4 @@ int main(int argc, char **argv)
     
     return exitStatus;
 }
+
