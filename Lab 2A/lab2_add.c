@@ -20,6 +20,8 @@ long long counter = 0;
 int numThreads = 1;
 int numIterations = 1;
 int opt_yield = 0;
+pthread_mutex_t myMutex = PTHREAD_MUTEX_INITIALIZER;
+int mySpinLock = 0;
 
 char synchronization = NO_LOCK;
 
@@ -33,16 +35,46 @@ void add(long long *pointer, long long value)
     *pointer = sum;
 }
 
-void addCaller()
+void addValue(int val)
 {
     for (int i = 0; i < numIterations; i++)
     {
-        add(&counter, 1);
+        switch (synchronization)
+        {
+            case MUTEX:
+                pthread_mutex_lock(&myMutex);
+                add(&counter, val);
+                pthread_mutex_unlock(&myMutex);
+                break;
+            case SPIN_LOCK:
+                while (__sync_lock_test_and_set(&mySpinLock, 1));
+                add(&counter, val);
+                __sync_lock_release(&mySpinLock);
+                break;
+            case COMP_AND_SWAP:
+                ;   //to appease compiler
+                long long oldval, sum;
+                do
+                {
+                    oldval = counter;
+                    sum = oldval + val;
+                    if(opt_yield)
+                    {
+                        sched_yield();
+                    }
+                } while(__sync_val_compare_and_swap(&counter, oldval, sum) != oldval);
+                break;
+            case NO_LOCK:
+                add(&counter, val);
+                break;
+        }
     }
-    for (int i = 0; i < numIterations; i++)
-    {
-        add(&counter, -1);
-    }
+}
+
+void addCaller()
+{
+    addValue(1);
+    addValue(-1);
 }
 
 void printUsage(int* exitStatus)
