@@ -79,9 +79,9 @@ void addCaller()
 
 void printUsage(int* exitStatus)
 {
-    fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab2_add --threads=[numThreads] --iterations=[numIterations] --sync=[m|s|c]\n");
+    fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab2_add --threads=[numThreads] --iterations=[numIterations] --yield --sync=[m|s|c]\n");
     fflush(stderr);
-    *exitStatus = 1;
+    exit(1);
 }
 
 int main(int argc, char **argv)
@@ -90,8 +90,6 @@ int main(int argc, char **argv)
     struct timespec startTime;
     clock_gettime(CLOCK_MONOTONIC, &startTime);
     long long start = (startTime.tv_sec * 1000000000) + startTime.tv_nsec;
-    
-    int exitStatus = 0;
     
     static struct option long_options[] =
     {
@@ -104,8 +102,6 @@ int main(int argc, char **argv)
     
     int optResult;
     
-    //think about optional_argument vs required argument - checking optarg=null
-    
     while (1)
     {
         optResult = getopt_long(argc, argv, "", long_options, NULL);
@@ -115,26 +111,23 @@ int main(int argc, char **argv)
         switch (optResult)
         {
             case 't':
-                if (optarg != NULL)
-                {
-                    numThreads = atoi(optarg);
-                }
+                numThreads = atoi(optarg);
                 break;
             case 'i':
-                if (optarg != NULL)
-                {
-                    numIterations = atoi(optarg);
-                }
+                numIterations = atoi(optarg);
                 break;
             case 'y':
                 opt_yield = 1;
                 break;
             case 's':
                 synchronization = optarg[0];
-                //THINK ABOUT ERROR CHECKING LATER
+                if ( ! (synchronization == 'm' || synchronization == 's' || synchronization == 'c'))
+                {
+                    printUsage();
+                }
                 break;
             case '?':
-                printUsage(&exitStatus);
+                printUsage();
                 break;
         }
     }
@@ -151,8 +144,7 @@ int main(int argc, char **argv)
         {
             fprintf(stderr, "Error creating thread #%d\n", i + 1);
             fflush(stderr);
-            exitStatus = 1;
-            //check if exit status equals 1 or 2
+            exit(1);
         }
     }
     
@@ -164,8 +156,7 @@ int main(int argc, char **argv)
         {
             fprintf(stderr, "Error joining thread #%d\n", i + 1);
             fflush(stderr);
-            exitStatus = 1;
-            //check if exit status equals 1 or 2
+            exit(1);
         }
     }
     
@@ -175,11 +166,6 @@ int main(int argc, char **argv)
     long long end = (endTime.tv_sec * 1000000000) + endTime.tv_nsec;
     
     //print CSV record
-    
-    
-    
-    
-    
     //name of the test, numThreads, numIterations, operationsPerformed, run time, avg time per operation, total at the end
     char testName[15];
     if (opt_yield)  //yield argument passed
@@ -229,7 +215,6 @@ int main(int argc, char **argv)
     
     //free dynamically allocated memory
     free(threads);
-    
-    return exitStatus;
+    return 0;
 }
 

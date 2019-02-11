@@ -3,25 +3,8 @@
 // ID: 804993030
 
 #include "SortedList.h"
-
-/**
- * SortedList (and SortedListElement)
- *
- *    A doubly linked list, kept sorted by a specified key.
- *    This structure is used for a list head, and each element
- *    of the list begins with this structure.
- *
- *    The list head is in the list, and an empty list contains
- *    only a list head.  The next pointer in the head points at
- *      the first (lowest valued) elment in the list.  The prev
- *      pointer in the list head points at the last (highest valued)
- *      element in the list.  Thus, the list is circular.
- *
- *      The list head is also recognizable by its NULL key pointer.
- *
- * NOTE: This header file is an interface specification, and you
- *       are not allowed to make any changes to it.
- */
+#include <string.h>
+#include <sched.h>
 
 /**
  * SortedList_insert ... insert an element into a sorted list
@@ -58,9 +41,6 @@ void SortedList_insert(SortedList_t *list, SortedListElement_t *element)
     
     nextElement->prev = element;
 }
-
-
-
 
 /**
  * SortedList_delete ... remove an element from a sorted list
