@@ -77,7 +77,7 @@ void addCaller()
     addValue(-1);
 }
 
-void printUsage(int* exitStatus)
+void printUsage()
 {
     fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab2_add --threads=[numThreads] --iterations=[numIterations] --yield --sync=[m|s|c]\n");
     fflush(stderr);
