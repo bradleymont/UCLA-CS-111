@@ -112,7 +112,7 @@ set title "List-4: Scalability of synchronization mechanisms"
 set xlabel "Threads"
 set logscale x 2
 unset xrange
-set xrange [0.75:]
+set xrange [0.75:25]
 set ylabel "Length-adjusted cost per operation(ns)"
 set logscale y
 set output 'lab2_list-4.png'
