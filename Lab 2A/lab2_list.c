@@ -53,7 +53,7 @@ void unlock()
         case SPIN_LOCK:
             __sync_lock_release(&mySpinLock);
             return;
-            //for NO_LOCK, do nothing
+        //for NO_LOCK, do nothing
     }
 }
 
