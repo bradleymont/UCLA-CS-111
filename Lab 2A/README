@@ -74,7 +74,7 @@ Comment on the general shapes of the curves, and explain why they have this shap
 Comment on the relative rates of increase and differences in the shapes of the curves, and offer an explanation for these differences.
 
 In both parts, the time per mutex-protected operation increases as the number of threads increases. However, in Part-2, the time per mutex-protected operation increases at a much faster rate because the basic operation for Part-2 (manipulating a sorted linked list) is much more expensive than the basic operation for Part-1 (adding to a shared variable); therefore, the chance of multiple threads contending for the same resource increases because they spend more time in the critical section, so Part-2 increases at a faster rate. 
-This explains the general shapes of the curves: both parts have a positive correlation between time per mutex-protected operation and the number of thread, but the graph for Part-2 increases at a higher rate. 
+This explains the general shapes of the curves: both parts have a positive correlation between time per mutex-protected operation and the number of threads, but the graph for Part-2 increases at a higher rate. 
 
 
 QUESTION 2.2.2 - scalability of spin locks
