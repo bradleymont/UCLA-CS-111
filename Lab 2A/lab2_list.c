@@ -187,16 +187,10 @@ int main(int argc, char **argv)
         switch (optResult)
         {
             case 't':
-                if (optarg != NULL)
-                {
-                    numThreads = atoi(optarg);
-                }
+                numThreads = atoi(optarg);
                 break;
             case 'i':
-                if (optarg != NULL)
-                {
-                    numIterations = atoi(optarg);
-                }
+                numIterations = atoi(optarg);
                 break;
             case 'y':
                 ; //to appease compiler
