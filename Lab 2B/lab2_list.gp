@@ -40,38 +40,38 @@ set datafile separator ","
 set title "Scalability-1: Throughput of Synchronized Lists"
 set xlabel "Threads"
 set logscale x 2
-set xrange [0.75:]
+set xrange [0.75:32]
 set ylabel "Throughput (operations/sec)"
 set logscale y 10
 set output 'lab2b_1.png'
 
-# grep out only single threaded, un-protected, non-yield results
 plot \
-     "< grep 'list-none-m,[0-9]*,1000,1' lab2b_list.csv" using ($2):(1000000000/($7)) \
+     "< grep 'list-none-m,[0-9]*,1000,1,' lab2b_list.csv" using ($2):(1000000000/($7)) \
 	title 'list ins/lookup/delete w/mutex' with linespoints lc rgb 'red', \
-     "< grep 'list-none-s,[0-9]*,1000,1' lab2b_list.csv" using ($2):(1000000000/($7)) \
+     "< grep 'list-none-s,[0-9]*,1000,1,' lab2b_list.csv" using ($2):(1000000000/($7)) \
 	title 'list ins/lookup/delete w/spin' with linespoints lc rgb 'green'
 
 
-set title "List-2: Unprotected Threads and Iterations that run without failure"
+#lab2b_2.png: mean time per mutex wait and mean time per operation for mutex-synchronized list operations.
+set title "Scalability-2: Per-operation Times for Mutex-Protected List Operations"
 set xlabel "Threads"
 set logscale x 2
-set xrange [0.75:]
-set ylabel "Successful Iterations"
+set xrange [0.75:24]
+set ylabel "mean time/operation (ns)"
 set logscale y 10
-set output 'lab2_list-2.png'
-# note that unsuccessful runs should have produced no output
+set output 'lab2b_2.png'
+
 plot \
-     "< grep list-none-none lab2_list.csv" using ($2):($3) \
-	title 'w/o yields' with points lc rgb 'green', \
-     "< grep list-i-none lab2_list.csv" using ($2):($3) \
-	title 'yield=i' with points lc rgb 'red', \
-     "< grep list-d-none lab2_list.csv" using ($2):($3) \
-	title 'yield=d' with points lc rgb 'violet', \
-     "< grep list-il-none lab2_list.csv" using ($2):($3) \
-	title 'yield=il' with points lc rgb 'orange', \
-     "< grep list-dl-none lab2_list.csv" using ($2):($3) \
-	title 'yield=dl' with points lc rgb 'blue'
+     "< grep 'list-none-m,[0-9]*,1000,1,' lab2b_list.csv" using ($2):($7) \
+	title 'completion time' with linespoints lc rgb 'green', \
+     "< grep 'list-none-m,[0-9]*,1000,1,' lab2b_list.csv" using ($2):($8) \
+	title 'wait for lock' with linespoints lc rgb 'red'
+
+
+
+
+
+
      
 set title "List-3: Protected Iterations that run without failure"
 unset logscale x
