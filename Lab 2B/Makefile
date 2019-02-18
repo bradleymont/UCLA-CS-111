@@ -15,7 +15,7 @@ profile: build
 	CPUPROFILE=./raw.gperf \
 	./lab2_list --iterations=1000 --threads=12 --sync=s
 	pprof --text ./lab2_list ./raw.gperf > profile.out
-	pprof --list=sync ./lab2_list ./raw.gperf >> profile.out
+	pprof --list=lock ./lab2_list ./raw.gperf >> profile.out
 	rm -f ./raw.gperf
 graphs: tests
 	gnuplot lab2_list.gp
