@@ -1,0 +1,9 @@
+Total: 574 samples
+     523  91.1%  91.1%      523  91.1% lock
+      38   6.6%  97.7%       38   6.6% __strcmp_sse42
+       7   1.2%  99.0%       31   5.4% SortedList_lookup
+       3   0.5%  99.5%       19   3.3% SortedList_insert
+       2   0.3%  99.8%        2   0.3% _init
+       1   0.2% 100.0%      574 100.0% modifyLinkedList
+       0   0.0% 100.0%      574 100.0% __clone
+       0   0.0% 100.0%      574 100.0% start_thread

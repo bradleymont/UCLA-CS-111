@@ -22,4 +22,4 @@ graphs: tests
 clean:
 	rm -rf lab2_list *.tar.gz *.o
 dist: build graphs
-	tar -czf lab2a-804993030.tar.gz SortedList.h SortedList.c lab2_list.c Makefile lab2b_list.csv profile.out *.png lab2_list.gp lab2_test.sh README
+	tar -czf lab2b-804993030.tar.gz SortedList.h SortedList.c lab2_list.c Makefile lab2b_list.csv profile.out *.png lab2_list.gp lab2_test.sh README
