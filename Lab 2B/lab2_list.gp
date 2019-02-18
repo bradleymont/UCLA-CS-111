@@ -15,6 +15,7 @@
 #	5. # operations performed (threads x iterations x (ins + lookup + delete))
 #	6. run time (ns)
 #	7. run time per operation (ns)
+#	8. average mutex wait time
 #
 # output:
 #	lab2b_1.png ... throughput vs. number of threads for mutex and spin-lock synchronized list operations.

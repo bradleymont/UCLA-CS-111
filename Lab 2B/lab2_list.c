@@ -16,14 +16,6 @@
 #define MUTEX 'm'
 #define SPIN_LOCK 's'
 
-//global variables
-char synchronization = NO_LOCK;
-
-
-
-//pthread_mutex_t myMutex = PTHREAD_MUTEX_INITIALIZER;
-//int mySpinLock = 0;
-
 struct Sublist
 {
     SortedList_t* list;
@@ -31,34 +23,17 @@ struct Sublist
     int mySpinLock;
 };
 
+//global variables
+char synchronization = NO_LOCK;
 struct Sublist* sublists;
-
-
-
-
-
+SortedListElement_t* listElements; //an array of linked list elements (each with a randomized key)
 int numThreads = 1;
 int numIterations = 1;
 int numLists = 1;
-//SortedList_t* list;
-SortedListElement_t* listElements; //an array of linked list elements (each with a randomized key)
 const int keySize = 5;
 int numElements;
 int opt_yield = 0;
-
 long long* mutexWaitTimes;  //to keep track of the time spent waiting for mutex locks
-
-//djb2 hash function taken from: http://www.cse.yorku.ca/~oz/hash.html
-//unsigned long hash(unsigned char *str)
-//{
-//    unsigned long hash = 5381;
-//    int c;
-//
-//    while (c = *str++)
-//        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-//
-//    return hash % numLists;
-//}
 
 int hash(const char* key)
 {
@@ -116,7 +91,7 @@ void initializeListElements()
 
 void printUsage()
 {
-    fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab2_list --threads=[numThreads] --iterations=[numIterations] --yield=[idl] --sync=[m|s]\n");
+    fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab2_list --threads=[numThreads] --iterations=[numIterations] --lists=[numLists] --yield=[idl] --sync=[m|s]\n");
     fflush(stderr);
     exit(1);
 }
@@ -455,7 +430,6 @@ int main(int argc, char **argv)
     {
         free((void*) listElements[i].key);
     }
-    //free(list);
     free(listElements);
     free(threads);
     free(startIndices);

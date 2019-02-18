@@ -4,82 +4,78 @@ ID: 804993030
 
 Description of Included Files
 
-lab2_add.c: a C program that implements and tests a shared variable add function
-
 SortedList.h: a header file describing the interfaces for linked list operations
 
 SortedList.c: a C module that implements insert, delete, lookup, and length methods for a sorted doubly linked list
 
 lab2_list.c: a C program that implements and tests different multithreaded linked list operations
 
-Makefile: contains targets build, tests, graphs, dist, and clean to build the deliverable programs (lab2_add and lab2_list), output, graphs, and tarball
+Makefile: contains targets build, tests, profile, graphs, dist, and clean to build the deliverable programs, output, graphs, and tarball
 
-lab2_add.csv: contains all of the results for all of the Part-1 tests
+lab2b_list.csv: contains all of the results for all of test runs
 
-lab2_list.csv: contains all of the results for all of the Part-2 tests
+profile.out - execution profiling report showing where time was spent in the un-partitioned spin-lock implementation
 
-lab2_add-1.png: threads and iterations required to generate a failure (with and without yields)
-lab2_add-2.png: average time per operation with and without yields
-lab2_add-3.png: average time per (single threaded) operation vs. the number of iterations
-lab2_add-4.png: threads and iterations that can run successfully with yields under each of the synchronization options
-lab2_add-5.png: average time per (protected) operation vs. the number of threads
-
-lab2_list-1.png: average time per (single threaded) unprotected operation vs. number of iterations (illustrating the correction of the per-operation cost for the list length)
-lab2_list-2.png: threads and iterations required to generate a failure (with and without yields)
-lab2_list-3.png: iterations that can run (protected) without failure
-lab2_list-4.png: (length-adjusted) cost per operation vs the number of threads for the various synchronization options
+lab2b_1.png: throughput vs. number of threads for mutex and spin-lock synchronized list operations.
+lab2b_2.png: mean time per mutex wait and mean time per operation for mutex-synchronized list operations.
+lab2b_3.png: successful iterations vs. threads for each synchronization method.
+lab2b_4.png: throughput vs. number of threads for mutex synchronized partitioned lists.
+lab2b_5.png: throughput vs. number of threads for spin-lock-synchronized partitioned lists.
 
 README: this file (contains answers to lab questions)
 
-lab2_test.sh: contains tests for lab2_add and lab2_list, appends output to .csv files
+lab2_test.sh: contains tests for lab2_list, appends output to .csv file
 
 Questions
 
-QUESTION 2.1.1 - causing conflicts:
-Why does it take many iterations before errors are seen?
-Why does a significantly smaller number of iterations so seldom fail?
+QUESTION 2.3.1 - CPU time in the basic list implementation:
+Where do you believe most of the CPU time is spent in the 1 and 2-thread list tests ?
+Why do you believe these to be the most expensive parts of the code?
+Where do you believe most of the CPU time is being spent in the high-thread spin-lock tests?
+Where do you believe most of the CPU time is being spent in the high-thread mutex tests?
 
-It takes many iterations before errors are seen because for errors to occur, there must be at least 2 threads accessing the same resource. Therefore, the amount of iterations must be large enough so that other threads can start running while one thread is still finishing, thus creating the possibility for race conditions. A significantly smaller number of iterations so seldom fails because there is much less concurrency with fewer operations: since threads run for shorter, there is a smaller likelihood that multiple threads will access the same shared memory and cause race conditions.
+For 1-thread and spin-lock synchronization, most of the CPU time goes toward list operations since the single thread does not have to do any spinning before it acquires the lock, so it can spend a majority of its time doing the actual list operations. This applies to both a small and large amount of iterations; the time spent spinning will be almost nothing since the lock will be immediately available, so the CPU time can be spent on list operations. 
 
+For 1-thread and mutex synchronization, the behavior for a small amount of iterations cannot be predicted because we are unsure how the time spent locking and unlocking the mutex lock compares to the time spent doing list operations. Either one of them could run faster with a small amount of iterations. However, with a large amount of iterations, the time spent doing list operations will overshadow the time spent locking and unlocking the mutex lock, so most of the CPU time will be spent on list operations for 1-thread, mutex synchronization, and a large amount of iterations.
 
-QUESTION 2.1.2 - cost of yielding:
-Why are the --yield runs so much slower?
-Where is the additional time going?
-Is it possible to get valid per-operation timings if we are using the --yield option?
-If so, explain how. If not, explain why not.
+For 2-thread, spin-lock synchronization, and a small amount of iterations, the CPU time will be spent mostly on list operations and partly on spinning. While one thread is executing list operations, the other will be spinning. However, due to the extra overhead of setting up the locks, most of the CPU time will be spent on spinning in this case, with a decent amount going toward list operations. But with a large amount of iterations, the overhead of setting up the locks will get overshadowed, so the CPU time will be split pretty evenly between spinning and list operations because one thread spins while the other one executes list operations.
 
-The --yield runs are so much slower because yield causes a context switch, so all the context switches add a lot of overhead and slow down the program. The additional time is going toward saving and restoring the state of each thread involved in each context switch.
-It is not possible to get valid per-operation timings if we are using the -yield option because our timing would include the time for the context switches as well. Even if there were a way to accurately measure the time for each operation, it would result in inaccurate times because add is such a cheap operation that any extra overhead (such as measuring and calculating time) could overshadow the actual time taken for the add operation.
+For 2-thread, mutex synchronization, and a small amount of iterations, we still are unsure because we don't know how the time spent locking and unlocking the mutex lock compares to the time spent doing list operations. However, with a large amount of iterations, most of the CPU time will be spent on list operations due to the same reason as the single threaded case.
 
+In the high-thread spin-lock tests, I believe most of the CPU time is being spent spinning because a majority of the threads will spin (wait for the lock) while one thread is doing list operations.
 
-QUESTION 2.1.3 - measurement errors:
-Why does the average cost per operation drop with increasing iterations?
-If the cost per iteration is a function of the number of iterations, how do we know how many iterations to run (or what the "correct" cost is)?
-
-The average cost per operation drops with increasing iterations because when we measure time (cost), we are also measuring the time to create each thread, which causes extra overhead. Therefore, the average cost per operation goes down with increasing iterations because the cost for creating the threads eventually becomes drowned out compared to the large cost of more iterations.
-If the cost per iteration is a function of the number of iterations, we would technically have to run an infinite (or extremely large until the thread creation cost is amortized) amount of iterations to calculate the "correct" cost because this would cause the overhead of creating threads to be insignificant in comparison to the actual operations.
+In the high-thread mutex tests, I believe that if the lists are decently short and the list operations are very quick, then a majority of the CPU time would go toward context-switching between threads, which can be very expensive. However, if the lists are extremely long and list operations become very expensive, more CPU time could be spent on list operations opposed to context switches.
 
 
-QUESTION 2.1.4 - costs of serialization:
-Why do all of the options perform similarly for low numbers of threads?
-Why do the three protected operations slow down as the number of threads rises?
+QUESTION 2.3.2 - Execution Profiling:
+Where (what lines of code) are consuming most of the CPU time when the spin-lock version of the list exerciser is run with a large number of threads?
+Why does this operation become so expensive with large numbers of threads?
 
-All of the options perform similarly for low numbers of threads because two main factors for performance are adding as well as blocking. A low number of threads means that the cost of blocking is relatively small because there are less threads to wait for when a thread wants access to a critical section; therefore, the performance for each thread will mostly be based on executing the add option, which will be similar for each thread.
-As the number of threads rises, the three protected operations slow down because each thread will be blocked longer waiting for access to the critical section. With more threads, there's a greater chance of multiple threads contending for the same shared memory, so threads will have to wait longer to acquire the lock for a critical section.
+After using gperftools to profile the spin-lock version of the list exerciser with a large number of threads, I see that my lock function is consuming most of the CPU time in this scenario. Within this lock function, I set up my locking synchronization for the list operations. Specifically, the line of code "while (__sync_lock_test_and_set(&sublist->mySpinLock, 1));" is taking up the most CPU time because this is the part of the cofe that keeps spinning and chewing up CPU time until the lock has been freed.
 
-
-QUESTION 2.2.1 - scalability of Mutex
-Compare the variation in time per mutex-protected operation vs the number of threads in Part-1 (adds) and Part-2 (sorted lists).
-Comment on the general shapes of the curves, and explain why they have this shape.
-Comment on the relative rates of increase and differences in the shapes of the curves, and offer an explanation for these differences.
-
-In both parts, the time per mutex-protected operation increases as the number of threads increases. However, in Part-2, the time per mutex-protected operation increases at a much faster rate because the basic operation for Part-2 (manipulating a sorted linked list) is much more expensive than the basic operation for Part-1 (adding to a shared variable); therefore, the chance of multiple threads contending for the same resource increases because they spend more time in the critical section, so Part-2 increases at a faster rate. 
-This explains the general shapes of the curves: both parts have a positive correlation between time per mutex-protected operation and the number of threads, but the graph for Part-2 increases at a higher rate. 
+This operation becomes so expensive with a large number of threads because as the number of threads increases, there's more threads in contention for CPU time. Therefore, more threads will have to simply spin and use up CPU cycles as they wait for the lock to the critical section to be unlocked so they can execute their list operations.
 
 
-QUESTION 2.2.2 - scalability of spin locks
+QUESTION 2.3.3 - Mutex Wait Time:
+Look at the average time per operation (vs. # threads) and the average wait-for-mutex time (vs. #threads).
+Why does the average lock-wait time rise so dramatically with the number of contending threads?
+Why does the completion time per operation rise (less dramatically) with the number of contending threads?
+How is it possible for the wait time per operation to go up faster (or higher) than the completion time per operation?
 
-Compare the variation in time per protected operation vs the number of threads for list operations protected by Mutex vs Spin locks. Comment on the general shapes of the curves, and explain why they have this shape.
-Comment on the relative rates of increase and differences in the shapes of the curves, and offer an explanation for these differences.
+The average lock-wait time rises so dramatically with the number of contending threads because of two reasons. First, with more threads, there is more contention between threads for access to the critical section, so the likelihood of a thread having to wait increasese with the number of threads since only one thread can do list operations in the critical section at a time, so an increasing amount of threads must wait as we increase the number of threads. Additionally, with more threads, the longer the queue gets for threads waiting for the mutex to be unlocked, so the longer waiting queue and increased contention causes the average lock-wait time to rise so dramatically with the number of contending threads.
 
-As the number of threads for list operations increases, the time per protected operation increases for both types of locks; however, the time per protected operation for spin locks increases at a much faster rate than that of mutex locks. This occurs because mutex locks put threads to sleep while they wait to acquire the lock for a critical section, but spin locks make the thread keep spinning until it acquires the lock to enter the critical section. This spinning adds extra overhead and CPU time that mutex locks do not have. This explains the general shapes of the curves: mutex and spin locks both increase their time per protected operation as the number of threads for list operations increases, but the graphs for spin locks increase at a higher rate due to the increased CPU time taken by spin locks spinning while they wait for the lock.
+The completion time per operation rises (less dramatically) with the number of contending threads because as the number of threads increases, more CPU time is spent on context switches between threads, so the completion time per operation will go up. Additionally, with more threads, there's more items in the list (threads x iterations), so each list operation will take longer as a result (counting more items, deleting more items, etc).
+
+It is possible for the wait time per operation to go up faster (or higher) than the completion time per operation. First, note that the wait time measures the per-thread average time for an operation, while the completion time per operation is the total average amount of time per operation. Therefore, multiple threads can be waiting at the same time (their wait times can overlap); this means that the wait time per operation can go up faster than the completion time per operation since the wait time will be adding up overlapping wait times for threads, while the completion time will not. 
+
+
+QUESTION 2.3.4 - Performance of Partitioned Lists
+Explain the change in performance of the synchronized methods as a function of the number of lists.
+Should the throughput continue increasing as the number of lists is further increased? If not, explain why not.
+It seems reasonable to suggest the throughput of an N-way partitioned list should be equivalent to the throughput of a single list with fewer (1/N) threads. Does this appear to be true in the above curves? If not, explain why not.
+
+As the number of lists increases, the performance of the synchronized methods increases as well because as the number of lists goes up, the contention for shared resources between threads goes down. More specifically, with just one list, only one thread can be operating on it at a time, while all the other threads must wait. However, as we increase the number of sub-lists, one thread can be working on each sub-list at a time without causing race conditions, so more threads can be executing list operations currently; thus, performance goes up with the number of lists.
+
+As the number of lists is further increased, the throughput should continue increasing until a certain point when the likelihood that two threads will be in contention for the same resource will be basically zero; at this point, there will be no benefit (throughput increase) when we increase the number of lists. Additionally, we could reach a point where the overhead of creating a large number of sublists is greater than the throughput benefits it provides.
+
+No, this does not appear to be true in the above curves. As we partition a list into more and more sub-lists, each sub-list has a smaller amount of items in it that need to be traversed by the different list operations. Therefore, due the smaller size of each sub-list, threads will need to spend less time in the critical section, so contention between threads will go down as well. With less contention and a smaller list to do operations on, the relative throughput of the N-way partitioned list is greater than the throughput of a single list with fewee (1/N) threads.
