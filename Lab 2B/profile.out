@@ -1,9 +1,67 @@
-Total: 574 samples
-     523  91.1%  91.1%      523  91.1% lock
-      38   6.6%  97.7%       38   6.6% __strcmp_sse42
-       7   1.2%  99.0%       31   5.4% SortedList_lookup
-       3   0.5%  99.5%       19   3.3% SortedList_insert
-       2   0.3%  99.8%        2   0.3% _init
-       1   0.2% 100.0%      574 100.0% modifyLinkedList
-       0   0.0% 100.0%      574 100.0% __clone
-       0   0.0% 100.0%      574 100.0% start_thread
+Total: 1095 samples
+     945  86.3%  86.3%      945  86.3% lock
+     129  11.8%  98.1%      129  11.8% __strcmp_sse42
+      11   1.0%  99.1%       84   7.7% SortedList_lookup
+       8   0.7%  99.8%       66   6.0% SortedList_insert
+       2   0.2% 100.0%        2   0.2% _init
+       0   0.0% 100.0%     1095 100.0% __clone
+       0   0.0% 100.0%     1095 100.0% modifyLinkedList
+       0   0.0% 100.0%     1095 100.0% start_thread
+ROUTINE ====================== lock in /u/cs/ugrad/bradley/Project2B/lab2_list.c
+   945    945 Total samples (flat / cumulative)
+     .      .  120:     fflush(stderr);
+     .      .  121:     exit(1);
+     .      .  122: }
+     .      .  123: 
+     .      .  124: void lock(struct timespec* waitStart, struct timespec* waitEnd, int index, struct Sublist* sublist)
+---
+     .      .  125: {
+     .      .  126:     switch (synchronization)
+     .      .  127:     {
+     .      .  128:         case MUTEX:
+     .      .  129:             clock_gettime(CLOCK_MONOTONIC, waitStart); //measure time at the start of waiting for the lock
+     .      .  130:             pthread_mutex_lock(&sublist->myMutex);
+     .      .  131:             clock_gettime(CLOCK_MONOTONIC, waitEnd); //measure time after getting the lock
+     .      .  132:             mutexWaitTimes[index] += timeDifference(*waitStart, *waitEnd); //add the wait time to the mutex wait times array
+     .      .  133:             return;
+     .      .  134:         case SPIN_LOCK:
+   945    945  135:             while (__sync_lock_test_and_set(&sublist->mySpinLock, 1));
+     .      .  136:             return;
+     .      .  137:             //for NO_LOCK, do nothing
+     .      .  138:     }
+     .      .  139: }
+---
+     .      .  140: 
+     .      .  141: void unlock(struct Sublist* sublist)
+     .      .  142: {
+     .      .  143:     switch (synchronization)
+     .      .  144:     {
+ROUTINE ====================== lock in /u/cs/ugrad/bradley/Project2B/lab2_list.c
+   945    945 Total samples (flat / cumulative)
+     .      .  120:     fflush(stderr);
+     .      .  121:     exit(1);
+     .      .  122: }
+     .      .  123: 
+     .      .  124: void lock(struct timespec* waitStart, struct timespec* waitEnd, int index, struct Sublist* sublist)
+---
+     .      .  125: {
+     .      .  126:     switch (synchronization)
+     .      .  127:     {
+     .      .  128:         case MUTEX:
+     .      .  129:             clock_gettime(CLOCK_MONOTONIC, waitStart); //measure time at the start of waiting for the lock
+     .      .  130:             pthread_mutex_lock(&sublist->myMutex);
+     .      .  131:             clock_gettime(CLOCK_MONOTONIC, waitEnd); //measure time after getting the lock
+     .      .  132:             mutexWaitTimes[index] += timeDifference(*waitStart, *waitEnd); //add the wait time to the mutex wait times array
+     .      .  133:             return;
+     .      .  134:         case SPIN_LOCK:
+   945    945  135:             while (__sync_lock_test_and_set(&sublist->mySpinLock, 1));
+     .      .  136:             return;
+     .      .  137:             //for NO_LOCK, do nothing
+     .      .  138:     }
+     .      .  139: }
+---
+     .      .  140: 
+     .      .  141: void unlock(struct Sublist* sublist)
+     .      .  142: {
+     .      .  143:     switch (synchronization)
+     .      .  144:     {
