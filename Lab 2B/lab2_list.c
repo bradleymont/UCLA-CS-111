@@ -18,18 +18,57 @@
 
 //global variables
 char synchronization = NO_LOCK;
-pthread_mutex_t myMutex = PTHREAD_MUTEX_INITIALIZER;
-int mySpinLock = 0;
+
+
+
+//pthread_mutex_t myMutex = PTHREAD_MUTEX_INITIALIZER;
+//int mySpinLock = 0;
+
+struct Sublist
+{
+    SortedList_t* list;
+    pthread_mutex_t myMutex;
+    int mySpinLock;
+};
+
+struct Sublist* sublists;
+
+
+
+
 
 int numThreads = 1;
 int numIterations = 1;
-SortedList_t* list;
+int numLists = 1;
+//SortedList_t* list;
 SortedListElement_t* listElements; //an array of linked list elements (each with a randomized key)
 const int keySize = 5;
 int numElements;
 int opt_yield = 0;
 
 long long* mutexWaitTimes;  //to keep track of the time spent waiting for mutex locks
+
+//djb2 hash function taken from: http://www.cse.yorku.ca/~oz/hash.html
+//unsigned long hash(unsigned char *str)
+//{
+//    unsigned long hash = 5381;
+//    int c;
+//
+//    while (c = *str++)
+//        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+//
+//    return hash % numLists;
+//}
+
+int hash(const char* key)
+{
+    int ASCIIsum = 0;
+    for (int i = 0; i < keySize; i++)
+    {
+        ASCIIsum += (int) key[i];
+    }
+    return ASCIIsum % numLists;
+}
 
 long long timeDifference(struct timespec start, struct timespec end)
 {
@@ -51,12 +90,13 @@ char* generateRandomKey()
     return key;
 }
 
-void initializeEmptyList()
+SortedList_t* initializeEmptyList()
 {
-    list = malloc(sizeof(SortedList_t));
-    list->next = list;
-    list->prev = list;
-    list->key = NULL;
+    SortedList_t* emptyList = malloc(sizeof(SortedList_t));
+    emptyList->next = emptyList;
+    emptyList->prev = emptyList;
+    emptyList->key = NULL;
+    return emptyList;
 }
 
 void initializeListElements()
@@ -81,32 +121,32 @@ void printUsage()
     exit(1);
 }
 
-void lock(struct timespec* waitStart, struct timespec* waitEnd, int index)
+void lock(struct timespec* waitStart, struct timespec* waitEnd, int index, struct Sublist* sublist)
 {
     switch (synchronization)
     {
         case MUTEX:
             clock_gettime(CLOCK_MONOTONIC, waitStart); //measure time at the start of waiting for the lock
-            pthread_mutex_lock(&myMutex);
+            pthread_mutex_lock(&sublist->myMutex);
             clock_gettime(CLOCK_MONOTONIC, waitEnd); //measure time after getting the lock
             mutexWaitTimes[index] += timeDifference(*waitStart, *waitEnd); //add the wait time to the mutex wait times array
             return;
         case SPIN_LOCK:
-            while (__sync_lock_test_and_set(&mySpinLock, 1));
+            while (__sync_lock_test_and_set(&sublist->mySpinLock, 1));
             return;
             //for NO_LOCK, do nothing
     }
 }
 
-void unlock()
+void unlock(struct Sublist* sublist)
 {
     switch (synchronization)
     {
         case MUTEX:
-            pthread_mutex_unlock(&myMutex);
+            pthread_mutex_unlock(&sublist->myMutex);
             return;
         case SPIN_LOCK:
-            __sync_lock_release(&mySpinLock);
+            __sync_lock_release(&sublist->mySpinLock);
             return;
             //for NO_LOCK, do nothing
     }
@@ -123,51 +163,66 @@ void modifyLinkedList(void* startIndex)
     int mutexWaitIndex = start / numIterations;
     mutexWaitTimes[mutexWaitIndex] = 0;
     
-    //insert all pre-allocated elements into a (single shared-by-all-threads) list
+    //insert all pre-allocated elements into the multi-list (which sublist the key should go into determined by a hash of the key)
     for (int i = start; i < end; i++)
     {
-        lock(&waitStart, &waitEnd, mutexWaitIndex);
-        SortedList_insert(list, &listElements[i]);
-        unlock();
+        const char* currKey = listElements[i].key;
+        struct Sublist* currSublist = &sublists[hash(currKey)];
+        lock(&waitStart, &waitEnd, mutexWaitIndex, currSublist);
+        SortedList_insert(currSublist->list, &listElements[i]);
+        unlock(currSublist);
     }
     
-    //get the list length
-    lock(&waitStart, &waitEnd, mutexWaitIndex);
-    int listLength = SortedList_length(list);
-    unlock();
-    
-    if (listLength == -1)
+    //get the list length (enumerating all of the sub-lists)
+    int listLength = 0;
+    for (int i = 0; i < numLists; i++)
     {
-        fprintf(stderr, "Error: SortedList_length function found list to be corrupted.\n");
+        lock(&waitStart, &waitEnd, mutexWaitIndex, &sublists[i]);
+        int sublistLength = SortedList_length(sublists[i].list);
+        
+        if (sublistLength == -1)
+        {
+            fprintf(stderr, "Error: SortedList_length function found a sublist to be corrupted.\n");
+            fflush(stderr);
+            exit(2);
+        }
+        
+        listLength += sublistLength;
+        
+        unlock(&sublists[i]);
+    }
+    
+    if (listLength < 0)
+    {
+        fprintf(stderr, "Error: List has a negative length.\n");
         fflush(stderr);
         exit(2);
     }
     
     //look up and delete each of the keys that were previously inserted
-    //listElements
     for (int i = start; i < end; i++)
     {
         const char* currKey = listElements[i].key;
-        
-        lock(&waitStart, &waitEnd, mutexWaitIndex);
-        SortedListElement_t* elementToDelete = SortedList_lookup(list, currKey);
-        unlock();
-        
+        struct Sublist* currSublist = &sublists[hash(currKey)];
+        lock(&waitStart, &waitEnd, mutexWaitIndex, currSublist);
+        SortedListElement_t* elementToDelete = SortedList_lookup(currSublist->list, currKey);
         if (elementToDelete == NULL)
         {
             fprintf(stderr, "Error: SortedList_lookup function could not find element: list has been corrupted.\n");
             fflush(stderr);
             exit(2);
         }
-        lock(&waitStart, &waitEnd, mutexWaitIndex);
+        unlock(currSublist);
+        
+        lock(&waitStart, &waitEnd, mutexWaitIndex, currSublist);
         int deleteStatus = SortedList_delete(elementToDelete);
-        unlock();
         if (deleteStatus)
         {
             fprintf(stderr, "Error: SortedList_delete function found list to be corrupted.\n");
             fflush(stderr);
             exit(2);
         }
+        unlock(currSublist);
     }
 }
 
@@ -191,6 +246,7 @@ int main(int argc, char **argv)
         {"iterations", required_argument, NULL, 'i'},
         {"yield",      required_argument, NULL, 'y'},
         {"sync",       required_argument, NULL, 's'},
+        {"lists",      required_argument, NULL, 'l'},
         {0,            0,                 0,      0}
     };
     
@@ -240,20 +296,45 @@ int main(int argc, char **argv)
                     printUsage();
                 }
                 break;
+            case 'l':
+                numLists = atoi(optarg);
+                break;
             default:
                 printUsage();
                 break;
         }
     }
     
-    initializeEmptyList(); //initialize an empty list (list)
+    //initialize array of sublists
+    sublists = malloc(numLists * sizeof(struct Sublist));
+    
+    //initialize each individual sublist
+    for (int i = 0; i < numLists; i++)
+    {
+        sublists[i].list = initializeEmptyList();
+        switch (synchronization)
+        {
+            case MUTEX:
+                ; //to appease compiler
+                int initReturn = pthread_mutex_init(&sublists[i].myMutex, NULL);
+                if (initReturn)
+                {
+                    fprintf(stderr, "Error: Could not initialize mutex lock.\n");
+                    fflush(stderr);
+                    exit(2);
+                }
+                break;
+            case SPIN_LOCK:
+                sublists[i].mySpinLock = 0;
+                break;
+        }
+    }
     
     initializeListElements(); //create and initialize (numThreads x numIterations) list elements (listElements)
     
     //note the (high resolution) starting time for the run
     struct timespec startTimeSpec;
     clock_gettime(CLOCK_MONOTONIC, &startTimeSpec);
-    //long long start = (startTime.tv_sec * 1000000000) + startTime.tv_nsec;
     
     //array of time spent waiting for each mutex lock
     mutexWaitTimes = malloc(numThreads * sizeof(long long));
@@ -296,14 +377,16 @@ int main(int argc, char **argv)
     //note the (high resolution) end time
     struct timespec endTimeSpec;
     clock_gettime(CLOCK_MONOTONIC, &endTimeSpec);
-    //long long end = (endTime.tv_sec * 1000000000) + endTime.tv_nsec;
     
-    //check the length of the list to confirm that it is zero
-    if (SortedList_length(list) != 0)
+    //check the length of each sublist to confirm that they are all zero
+    for (int i = 0; i < numLists; i++)
     {
-        fprintf(stderr, "Error: Length of list is not zero.\n");
-        fflush(stderr);
-        exit(2);
+        if (SortedList_length(sublists[i].list) != 0)
+        {
+            fprintf(stderr, "Error: Length of list is not zero.\n");
+            fflush(stderr);
+            exit(2);
+        }
     }
     
     //create test name
@@ -345,7 +428,6 @@ int main(int argc, char **argv)
     //print CSV
     int numOperations = numThreads * numIterations * 3;
 
-    //long long runTime = end - start;
     long long runTime = timeDifference(startTimeSpec, endTimeSpec);
     
     long long avgTimePerOperation = runTime / numOperations;
@@ -365,7 +447,7 @@ int main(int argc, char **argv)
     
     long long avgMutexWaitTime = mutexWaitTime / numLockOperations;
     
-    printf("%s,%d,%d,%d,%d,%lld,%lld,%lld", testName, numThreads, numIterations, 1, numOperations, runTime, avgTimePerOperation, avgMutexWaitTime);
+    printf("%s,%d,%d,%d,%d,%lld,%lld,%lld", testName, numThreads, numIterations, numLists, numOperations, runTime, avgTimePerOperation, avgMutexWaitTime);
     printf("\n");
     
     //free dynamically allocated memory
@@ -373,11 +455,16 @@ int main(int argc, char **argv)
     {
         free((void*) listElements[i].key);
     }
-    free(list);
+    //free(list);
     free(listElements);
     free(threads);
     free(startIndices);
     free(mutexWaitTimes);
+    for (int i = 0; i < numLists; i++)
+    {
+        free(sublists[i].list);
+    }
+    free(sublists);
     
     return 0;
 }
