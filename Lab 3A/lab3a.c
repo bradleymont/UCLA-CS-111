@@ -8,9 +8,9 @@
 #include <stdlib.h> //for exit(2)
 #include <errno.h> //to get errno for error messages
 #include <math.h>  //for ceil
+#include <string.h> //for memcpy
 #include <time.h>
 #include "ext2_fs.h"
-
 
 const int superBlockOffset = 1024; //the superblock is located at an offset of 1024 bytes from the start of the device
 const int groupDescTableOffset = 2048; //the offset is 2048 bytes since the superblock starts at an offset of 1024 bytes, and the size of the superblock is 1024 bytes
@@ -23,6 +23,7 @@ const int INODE = 2;
 struct ext2_super_block superBlock; //global super block struct variable
 struct ext2_group_desc groupDescTable; //global group descriptor table variable
 int imageFD; //global variable for file system image file descriptor
+__u32 bsize;    //block size
 
 //pread wrapper function (inspired by Arpaci-Dusseau textbook)
 void Pread(int fd, void* buf, size_t count, off_t offset)
@@ -41,7 +42,7 @@ void superBlockSummary()
     //the superblock is located at an offset of 1024 bytes from the start of the device
     Pread(imageFD, &superBlock, sizeof(struct ext2_super_block), superBlockOffset);
     
-    __u32 bsize = EXT2_MIN_BLOCK_SIZE << superBlock.s_log_block_size;
+    bsize = EXT2_MIN_BLOCK_SIZE << superBlock.s_log_block_size;
     
     printf("SUPERBLOCK,%u,%u,%u,%u,%u,%u,%u\n",
            superBlock.s_blocks_count, //total number of blocks (decimal)
@@ -121,9 +122,77 @@ void formatTime(time_t rawTime, char* result)
     strftime(result, 20, "%m/%d/%y %H:%M:%S", &timeStruct);
 }
 
+__u32 blockOffset(__u32 block)
+{
+    return 1024 + (block - 1) * bsize;
+}
+
+void directDirectoryEntries(struct ext2_inode* currInode, __u32 inodeNum)
+{
+    unsigned char block[bsize];
+    struct ext2_dir_entry* currDirEntry;
+    unsigned int offset = 0;
+    
+    for (int i = 0; i < EXT2_NDIR_BLOCKS; i++)
+    {
+        Pread(imageFD, block, bsize, currInode->i_block[i] * bsize);
+        
+        currDirEntry = (struct ext2_dir_entry *) block;
+        
+        while((offset < currInode->i_size) && currDirEntry->file_type)
+        {
+            if (currDirEntry->inode != 0)
+            {
+                //convert the name to a c string
+                char fileName[EXT2_NAME_LEN + 1];   //max file name length + null byte
+                memcpy(fileName, currDirEntry->name, currDirEntry->name_len);
+                fileName[currDirEntry->name_len] = 0;   //null terminate the c string
+                
+                printf("DIRENT,%d,%u,%u,%u,%u,'%s'\n",
+                       inodeNum, //parent inode number (decimal) ... the I-node number of the directory that contains this entry
+                       offset,  //logical byte offset (decimal) of this entry within the directory
+                       currDirEntry->inode, //inode number of the referenced file (decimal)
+                       currDirEntry->rec_len, //entry length (decimal)
+                       currDirEntry->name_len, //name length (decimal)
+                       fileName //name (string, surrounded by single-quotes)
+                       );
+            }
+            
+            offset += currDirEntry->rec_len;
+            currDirEntry = (void*) currDirEntry + currDirEntry->rec_len;
+        }
+    }
+}
+
+void indirectEntries(__u32 blockNum, __u32 inodeNum, __u32 baseBlockOffset, int level)
+{
+    __u32 indirectBlock[bsize];
+    
+    Pread(imageFD, indirectBlock, bsize, blockNum * bsize);
+    
+    __u32 numEntries = bsize / 4;   //4 is the size of __u32
+    for (__u32 i = 0; i < numEntries; i++)
+    {
+        if(indirectBlock[i] != 0) //for every non-zero block pointer
+        {
+            printf("INDIRECT,%d,%u,%u,%u,%u\n",
+                   inodeNum, //I-node number of the owning file (decimal)
+                   level, //(decimal) level of indirection for the block being scanned ... 1 for single indirect, 2 for double indirect, 3 for triple
+                   baseBlockOffset + i, //logical block offset (decimal) represented by the referenced block
+                   blockNum, //block number of the (1, 2, 3) indirect block being scanned (decimal)
+                   indirectBlock[i] //block number of the referenced block (decimal)
+                   );
+            
+            if (level > 1)
+            {
+                indirectEntries(indirectBlock[i], inodeNum, baseBlockOffset + i, level - 1);
+            }
+        }
+    }
+}
+
 void inodeSummary()
 {
-    //__u32 inodeTableSize = superBlock.s_inodes_count * superBlock.s_inode_size;
     __u32 inodeTableOffset = groupDescTable.bg_inode_table * EXT2_MIN_BLOCK_SIZE;
     
     for (__u32 inodeNum = 1; inodeNum <= superBlock.s_inodes_count; inodeNum++)
@@ -169,17 +238,36 @@ void inodeSummary()
                currInode.i_blocks //number of (512 byte) blocks of disk space (decimal) taken up by this file
                );
         
-        if (fileType == '?' || (fileType == 's' && currInode.i_size <= 60))
+        if (fileType == 'f' || fileType == 'd' || (fileType == 's' && currInode.i_size > 60))
         {
-            printf("\n");
-            continue;
-        }
-        
-        for (int i = 0; i < EXT2_N_BLOCKS; i++)
-        {
-            printf(",%u", currInode.i_block[i]);
+            for (int i = 0; i < EXT2_N_BLOCKS; i++)
+            {
+                printf(",%u", currInode.i_block[i]);
+            }
         }
         printf("\n");
+        
+        //direct block references
+        if (fileType == 'd')
+        {
+            directDirectoryEntries(&currInode, inodeNum);
+        }
+        
+        if (fileType == 'd' || fileType == 'f')
+        {
+            if (currInode.i_block[12] != 0)    //single indirection
+            {
+                indirectEntries(currInode.i_block[12], inodeNum, 12, 1);
+            }
+            if (currInode.i_block[13] != 0)    //double indirection
+            {
+                indirectEntries(currInode.i_block[13], inodeNum, 12 + 256, 2);
+            }
+            if (currInode.i_block[14] != 0)    //triple indirection
+            {
+                indirectEntries(currInode.i_block[14], inodeNum, 12 + 256 + 256 * 256, 3);
+            }
+        }
     }
 }
 

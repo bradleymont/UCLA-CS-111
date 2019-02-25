@@ -1,0 +1,16 @@
+NAME: Bradley Mont
+EMAIL: bradleymont@gmail.com
+ID: 804993030
+
+Description of Included Files
+
+lab3a.c: C source module for a program that reads a file system image, analyzes it, and then produces a CSV
+
+Makefile: contains targets default, dist, and clean to build the deliverable program
+
+ext2_fs.h: header file that defines the format of the EXT2 file system
+
+README: this file
+
+References:
+http://www.nongnu.org/ext2-doc/ext2.html
