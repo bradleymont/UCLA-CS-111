@@ -122,11 +122,6 @@ void formatTime(time_t rawTime, char* result)
     strftime(result, 20, "%m/%d/%y %H:%M:%S", &timeStruct);
 }
 
-__u32 blockOffset(__u32 block)
-{
-    return 1024 + (block - 1) * bsize;
-}
-
 void directDirectoryEntries(struct ext2_inode* currInode, __u32 inodeNum)
 {
     unsigned char block[bsize];
