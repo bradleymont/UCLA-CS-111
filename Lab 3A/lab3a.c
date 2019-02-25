@@ -173,15 +173,27 @@ void indirectEntries(__u32 blockNum, __u32 inodeNum, __u32 baseBlockOffset, int 
             printf("INDIRECT,%d,%u,%u,%u,%u\n",
                    inodeNum, //I-node number of the owning file (decimal)
                    level, //(decimal) level of indirection for the block being scanned ... 1 for single indirect, 2 for double indirect, 3 for triple
-                   baseBlockOffset + i, //logical block offset (decimal) represented by the referenced block
+                   baseBlockOffset, //logical block offset (decimal) represented by the referenced block
                    blockNum, //block number of the (1, 2, 3) indirect block being scanned (decimal)
                    indirectBlock[i] //block number of the referenced block (decimal)
                    );
             
             if (level > 1)
             {
-                indirectEntries(indirectBlock[i], inodeNum, baseBlockOffset + i, level - 1);
+                indirectEntries(indirectBlock[i], inodeNum, baseBlockOffset, level - 1);
+                if (level == 2)
+                {
+                    baseBlockOffset += 256;
+                }
+                else if (level == 3)
+                {
+                    baseBlockOffset += 65536;
+                }
             }
+        }
+        if (level == 1)
+        {
+            baseBlockOffset++;
         }
     }
 }
