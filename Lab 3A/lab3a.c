@@ -159,7 +159,41 @@ void directDirectoryEntries(struct ext2_inode* currInode, __u32 inodeNum)
     }
 }
 
-void indirectEntries(__u32 blockNum, __u32 inodeNum, __u32 baseBlockOffset, int level)
+void indirectDirectEntries(__u32 blockNum, __u32 inodeNum, struct ext2_inode* currInode, __u32 baseBlockOffset)
+{
+    unsigned char block[bsize];
+    struct ext2_dir_entry* currDirEntry;
+    unsigned int offset = 0;
+    
+    Pread(imageFD, block, bsize, blockNum * bsize);
+    
+    currDirEntry = (struct ext2_dir_entry *) block;
+    
+    while((offset < currInode->i_size) && currDirEntry->file_type)
+    {
+        if (currDirEntry->inode != 0)
+        {
+            //convert the name to a c string
+            char fileName[EXT2_NAME_LEN + 1];   //max file name length + null byte
+            memcpy(fileName, currDirEntry->name, currDirEntry->name_len);
+            fileName[currDirEntry->name_len] = 0;   //null terminate the c string
+            
+            printf("DIRENT,%d,%u,%u,%u,%u,'%s'\n",
+                   inodeNum, //parent inode number (decimal) ... the I-node number of the directory that contains this entry
+                   (baseBlockOffset * bsize) + offset,  //logical byte offset (decimal) of this entry within the directory
+                   currDirEntry->inode, //inode number of the referenced file (decimal)
+                   currDirEntry->rec_len, //entry length (decimal)
+                   currDirEntry->name_len, //name length (decimal)
+                   fileName //name (string, surrounded by single-quotes)
+                   );
+        }
+        
+        offset += currDirEntry->rec_len;
+        currDirEntry = (void*) currDirEntry + currDirEntry->rec_len;
+    }
+}
+
+void indirectEntries(__u32 blockNum, __u32 inodeNum, __u32 baseBlockOffset, int level, char fileType, struct ext2_inode* currInode)
 {
     __u32 indirectBlock[bsize];
     
@@ -170,6 +204,11 @@ void indirectEntries(__u32 blockNum, __u32 inodeNum, __u32 baseBlockOffset, int 
     {
         if(indirectBlock[i] != 0) //for every non-zero block pointer
         {
+            if (fileType == 'd' && level == 1)
+            {
+                indirectDirectEntries(indirectBlock[i], inodeNum, currInode, baseBlockOffset);
+            }
+            
             printf("INDIRECT,%d,%u,%u,%u,%u\n",
                    inodeNum, //I-node number of the owning file (decimal)
                    level, //(decimal) level of indirection for the block being scanned ... 1 for single indirect, 2 for double indirect, 3 for triple
@@ -180,7 +219,7 @@ void indirectEntries(__u32 blockNum, __u32 inodeNum, __u32 baseBlockOffset, int 
             
             if (level > 1)
             {
-                indirectEntries(indirectBlock[i], inodeNum, baseBlockOffset, level - 1);
+                indirectEntries(indirectBlock[i], inodeNum, baseBlockOffset, level - 1, fileType, currInode);
                 if (level == 2)
                 {
                     baseBlockOffset += 256;
@@ -264,15 +303,15 @@ void inodeSummary()
         {
             if (currInode.i_block[12] != 0)    //single indirection
             {
-                indirectEntries(currInode.i_block[12], inodeNum, 12, 1);
+                indirectEntries(currInode.i_block[12], inodeNum, 12, 1, fileType, &currInode);
             }
             if (currInode.i_block[13] != 0)    //double indirection
             {
-                indirectEntries(currInode.i_block[13], inodeNum, 12 + 256, 2);
+                indirectEntries(currInode.i_block[13], inodeNum, 12 + 256, 2, fileType, &currInode);
             }
             if (currInode.i_block[14] != 0)    //triple indirection
             {
-                indirectEntries(currInode.i_block[14], inodeNum, 12 + 256 + 256 * 256, 3);
+                indirectEntries(currInode.i_block[14], inodeNum, 12 + 256 + 256 * 256, 3, fileType, &currInode);
             }
         }
     }
