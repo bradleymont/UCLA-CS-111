@@ -9,6 +9,7 @@ import csv #for parsing through the given csv file
 from collections import defaultdict #for blockReferences
 
 #global arrays to contain data about each type of csv entry type (besides super block since there is only 1)
+exitStatus = 0
 superBlock = None
 groups = []
 freeBlocks = []
@@ -17,6 +18,8 @@ inodes = []
 dirents = []
 indirects = []
 blockReferences = defaultdict(list) #maps blockNum to corresponding BlockReference object
+allocatedInodes = []
+unallocatedInodes = []
 
 #classes to represent each type of csv entry type
 class SuperBlock:
@@ -123,22 +126,24 @@ def parseCSV():
 levelStrings = ["", "INDIRECT ", "DOUBLE INDIRECT ", "TRIPLE INDIRECT "]
 
 def checkBlock(blockNum, inode, offset, level):
-    global blockReferences
+    global blockReferences, exitStatus
     if blockNum == 0:
         return
     
     #invalid
     if blockNum < 0 or blockNum > superBlock.numBlocks:
         print("INVALID " + str(levelStrings[level]) +  "BLOCK " + str(blockNum) + " IN INODE " + str(inode) + " AT OFFSET " + str(offset))
+        exitStatus = 2
     #reserved
     elif blockNum < superBlock.firstLegalBlock:
         print("RESERVED " + str(levelStrings[level]) +  "BLOCK " + str(blockNum) + " IN INODE " + str(inode) + " AT OFFSET " + str(offset))
+        exitStatus = 2
     #valid
     else:
         blockReferences[blockNum].append(BlockReference(blockNum, inode, offset, level))
 
 def auditBlockConsistency():
-    global blockReferences
+    global blockReferences, exitStatus
     #direct block pointers for each inode
     for currInode in inodes:
         offset = 0
@@ -159,13 +164,92 @@ def auditBlockConsistency():
         #If a block is not referenced by any file and is not on the free list
         if block not in blockReferences and block not in freeBlocks:
             print("UNREFERENCED BLOCK " + str(block))
+            exitStatus = 2
         #A block that is allocated to some file might also appear on the free list
         elif block in blockReferences and block in freeBlocks:
             print("ALLOCATED BLOCK " + str(block) + " ON FREELIST")
+            exitStatus = 2
         #If a legal block is referenced by multiple files (or even multiple times in a single file)
         elif block in blockReferences and len(blockReferences[block]) > 1:
             for currBlockRef in blockReferences[block]:
                 print("DUPLICATE " + str(levelStrings[currBlockRef.level]) +  "BLOCK " + str(currBlockRef.blockNum) + " IN INODE " + str(currBlockRef.inode) + " AT OFFSET " + str(currBlockRef.offset))
+                exitStatus = 2
+
+def auditInodeAllocation():
+    global exitStatus, unallocatedInodes, allocatedInodes
+    unallocatedInodes = freeInodes
+    for currInode in inodes:
+        #allocated inodes
+        if currInode.fileType != '0':
+            if currInode.inodeNum in freeInodes:
+                print("ALLOCATED INODE " + str(currInode.inodeNum) + " ON FREELIST")
+                exitStatus = 2
+                unallocatedInodes.remove(currInode.inodeNum)
+            allocatedInodes.append(currInode)
+        #unallocated inodes
+        else:
+            if currInode.inodeNum not in freeInodes:
+                print("UNALLOCATED INODE " + str(currInode.inodeNum) + " NOT ON FREELIST")
+                exitStatus = 2
+                unallocatedInodes.append(currInode.inodeNum)
+
+        #for all non-reserved inodes
+        for currInode in range(superBlock.firstNonResInode, superBlock.numInodes):
+            if currInode not in freeInodes:
+                allocated = False
+                for inode in inodes:
+                    if inode.inodeNum == currInode:
+                        allocated = True
+                if not allocated:
+                    print("UNALLOCATED INODE " + str(currInode) + " NOT ON FREELIST")
+                    exitStatus = 2
+                    unallocatedInodes.append(currInode)
+
+def auditDirectoryConsistency():
+    global exitStatus, unallocatedInodes, allocatedInodes
+    numInodes = superBlock.numInodes
+    
+    inodes2numLinks = {} #maps inode numbers to the number of links
+    
+    for currDirent in dirents:
+        if currDirent.referenceInodeNum > numInodes:
+            print("DIRECTORY INODE " + str(currDirent.parentInodeNum) + " NAME " + str(currDirent.name) + " INVALID INODE " + str(currDirent.referenceInodeNum))
+            exitStatus = 2
+        elif currDirent.referenceInodeNum in unallocatedInodes:
+            print("DIRECTORY INODE " + str(currDirent.parentInodeNum) + " NAME " + str(currDirent.name) + " UNALLOCATED INODE " + str(currDirent.referenceInodeNum))
+            exitStatus = 2
+        else:
+            newLinkCount = inodes2numLinks.get(currDirent.referenceInodeNum, 0) + 1 #get returns 0 if unable to find referenceInodeNum
+            inodes2numLinks[currDirent.referenceInodeNum] = newLinkCount
+
+    for currInode in allocatedInodes:
+        if currInode.inodeNum in inodes2numLinks:
+            # allocated I-node whose reference count does not match the number of discovered links
+            if inodes2numLinks[currInode.inodeNum] != currInode.linkCount:
+                print("INODE " + str(currInode.inodeNum) + " HAS " + str(inodes2numLinks[currInode.inodeNum]) + " LINKS BUT LINKCOUNT IS " + str(currInode.linkCount))
+                exitStatus = 2
+        else:
+            if currInode.linkCount != 0:
+                print("INODE " + str(currInode.inodeNum) + " HAS 0 LINKS BUT LINKCOUNT IS " + str(currInode.linkCount))
+                exitStatus = 2
+
+    inodes2parents = {2: 2} # 2 = root-directory inode
+    
+    #fill out inodes2parent
+    for currDirent in dirents:
+        if currDirent.referenceInodeNum <= superBlock.numInodes and currDirent.referenceInodeNum not in unallocatedInodes:
+            if currDirent.name != "'.'" and currDirent.name != "'..'":
+                inodes2parents[currDirent.referenceInodeNum] = currDirent.parentInodeNum
+
+    for currDirent in dirents:
+        if currDirent.name == "'..'":
+            if inodes2parents[currDirent.parentInodeNum] != currDirent.referenceInodeNum:
+                print("DIRECTORY INODE " + str(currDirent.parentInodeNum) + " NAME '..' LINK TO INODE " + str(currDirent.referenceInodeNum) + " SHOULD BE " + str(inodes2parents[currDirent.parentInodeNum]))
+                exitStatus = 2
+        elif currDirent.name == "'.'":
+            if currDirent.referenceInodeNum != currDirent.parentInodeNum:
+                print("DIRECTORY INODE " + str(currDirent.parentInodeNum) + " NAME '.' LINK TO INODE " + str(currDirent.referenceInodeNum) + " SHOULD BE " + str(currDirent.parentInodeNum))
+                exitStatus = 2
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
@@ -174,3 +258,7 @@ if __name__ == '__main__':
     
     parseCSV()
     auditBlockConsistency()
+    auditInodeAllocation()
+    auditDirectoryConsistency()
+
+    exit(exitStatus)
