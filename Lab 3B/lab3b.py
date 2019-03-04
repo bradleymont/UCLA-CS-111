@@ -6,9 +6,19 @@
 
 import sys #for command-line argument
 import csv #for parsing through the given csv file
+from collections import defaultdict #for blockReferences
 
+#global arrays to contain data about each type of csv entry type (besides super block since there is only 1)
 superBlock = None
+groups = []
+freeBlocks = []
+freeInodes = []
+inodes = []
+dirents = []
+indirects = []
+blockReferences = defaultdict(list) #maps blockNum to corresponding BlockReference object
 
+#classes to represent each type of csv entry type
 class SuperBlock:
     def __init__(self, row):
         #note: row[0] is "SUPERBLOCK"
@@ -19,6 +29,8 @@ class SuperBlock:
         self.blocksPerGroup = int(row[5])
         self.inodesPerGroup = int(row[6])
         self.firstNonResInode = int(row[7])
+        self.inodeTableSize = self.numInodes * self.inodeSize / self.blockSize + 1
+        self.firstLegalBlock = self.inodeTableSize + 4  #4 for the superblock + group descriptor table + block bitmap + inode bitmap
 
 class Group:
     def __init__(self, row):
@@ -28,14 +40,6 @@ class Group:
         self.numInodes = int(row[3])
         self.numFreeBlocks = int(row[4])
         self.numFreeInodes = int(row[5])
-
-groups = []
-
-freeBlocks = []
-
-freeInodes = []
-
-inodes = []
 
 class Inode:
     def __init__(self, row):
@@ -64,8 +68,6 @@ class Dirent:
         self.nameLength = int(row[5])
         self.name = row[6]
 
-dirents = []
-
 class Indirect:
     def __init__(self, row):
         self.inodeNum = int(row[1])
@@ -74,7 +76,12 @@ class Indirect:
         self.indirectBlockNum = int(row[4])
         self.referenceBlockNum = int(row[5])
 
-indirects = []
+class BlockReference:
+    def __init__(self, blockNum, inode, offset, level):
+        self.blockNum = blockNum
+        self.inode = inode
+        self.offset = offset
+        self.level = level
 
 def parseCSV():
     csvFile = open(sys.argv[1], 'r') #open for reading
@@ -113,9 +120,57 @@ def parseCSV():
             sys.stderr.write("Error: Invalid line found in csv file\n")
             exit(1)
 
+levelStrings = ["", "INDIRECT ", "DOUBLE INDIRECT ", "TRIPLE INDIRECT "]
+
+def checkBlock(blockNum, inode, offset, level):
+    global blockReferences
+    if blockNum == 0:
+        return
+    
+    #invalid
+    if blockNum < 0 or blockNum > superBlock.numBlocks:
+        print("INVALID " + str(levelStrings[level]) +  "BLOCK " + str(blockNum) + " IN INODE " + str(inode) + " AT OFFSET " + str(offset))
+    #reserved
+    elif blockNum < superBlock.firstLegalBlock:
+        print("RESERVED " + str(levelStrings[level]) +  "BLOCK " + str(blockNum) + " IN INODE " + str(inode) + " AT OFFSET " + str(offset))
+    #valid
+    else:
+        blockReferences[blockNum].append(BlockReference(blockNum, inode, offset, level))
+
+def auditBlockConsistency():
+    global blockReferences
+    #direct block pointers for each inode
+    for currInode in inodes:
+        offset = 0
+        for block in currInode.directBlocks:
+            checkBlock(block, currInode.inodeNum, offset, 0)
+            offset += 1
+
+        checkBlock(currInode.singleIndirectBlock, currInode.inodeNum, 12, 1)
+        checkBlock(currInode.doubleIndirectBlock, currInode.inodeNum, 268, 2)
+        checkBlock(currInode.tripleIndirectBlock, currInode.inodeNum, 65804, 3)
+
+    #indirect block pointers
+    for currIndirect in indirects:
+        checkBlock(currIndirect.referenceBlockNum, currIndirect.inodeNum, currIndirect.logicalBlockOffset, currIndirect.levelOfIndirection)
+
+    #examine all valid block references
+    for block in range(superBlock.firstLegalBlock, superBlock.numBlocks):
+        #If a block is not referenced by any file and is not on the free list
+        if block not in blockReferences and block not in freeBlocks:
+            print("UNREFERENCED BLOCK " + str(block))
+        #A block that is allocated to some file might also appear on the free list
+        elif block in blockReferences and block in freeBlocks:
+            print("ALLOCATED BLOCK " + str(block) + " ON FREELIST")
+        #If a legal block is referenced by multiple files (or even multiple times in a single file)
+        elif block in blockReferences and len(blockReferences[block]) > 1:
+            for currBlockRef in blockReferences[block]:
+                print("DUPLICATE " + str(levelStrings[currBlockRef.level]) +  "BLOCK " + str(currBlockRef.blockNum) + " IN INODE " + str(currBlockRef.inode) + " AT OFFSET " + str(currBlockRef.offset))
+
 if __name__ == '__main__':
     if len(sys.argv) != 2:
         sys.stderr.write("Error: Incorrect argument.\nUsage: ./lab3b fileName.csv\n")
         exit(1)
-
+    
     parseCSV()
+    auditBlockConsistency()
