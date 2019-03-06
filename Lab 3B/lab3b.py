@@ -146,6 +146,11 @@ def auditBlockConsistency():
     global blockReferences, exitStatus
     #direct block pointers for each inode
     for currInode in inodes:
+        
+        #for symbolic links with length 60 bytes or less, the i-node block pointer fields do not contain block numbers and should not be analyized
+        if currInode.fileType == 's' and currInode.fileSize <= 60:
+            continue
+        
         offset = 0
         for block in currInode.directBlocks:
             checkBlock(block, currInode.inodeNum, offset, 0)
