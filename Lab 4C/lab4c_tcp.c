@@ -15,12 +15,13 @@
 #include <sys/stat.h> //open(2)
 #include <fcntl.h> //open(2)
 #include <unistd.h> //write(2)
+#include <sys/socket.h> //for socket(2), connect(2)
+#include <netdb.h> //for gethostbyname(3)
 
 const int B = 4275;
 const int R0 = 100000;
 
 mraa_aio_context temperature;
-mraa_gpio_context button;
 char scale = 'F';
 int period = 1;
 int loggingEnabled = 0;
@@ -28,16 +29,20 @@ char* logFileName;
 int logFileDescriptor;
 int generateReports = 1;
 
+char* id;
+char* host;
+int portNumber;
+int socketFD;
+struct hostent* server;
+
 struct timeval currTime;
 struct timeval lastRead;
 struct tm * localTime;
 
 void Exit(int status)
 {
-    //close temperature sensor and button
+    //close temperature sensor
     mraa_aio_close(temperature);
-    mraa_gpio_close(button);
-    
     exit(status);
 }
 
@@ -70,19 +75,19 @@ float readTemperature()
 
 void printUsage()
 {
-    fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab4b --period=# --scale=(C|F) --log=logFileName\n");
+    fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab4c_tcp --period=# --scale=(C|F) --log=logFileName --id=# --host=(name|address) portNumber\n");
     exit(1);
 }
 
 //this function is called when the button is pressed
-void shutdown()
+void shutdownDevice()
 {
     //output (and log) a final sample with the time and the string SHUTDOWN (instead of a temperature)
     localTime = localtime(&currTime.tv_sec);
     
     char report[15]; 
     sprintf(report, "%02d:%02d:%02d SHUTDOWN\n", localTime->tm_hour, localTime->tm_min, localTime->tm_sec);
-
+    
     printf("%s", report);
     fflush(stdout);
 
@@ -147,7 +152,7 @@ void processCommand(char * cmd)
     }
     else if (strcmp(cmd, "OFF") == 0)
     {
-        shutdown();
+        shutdownDevice();
     }
 }
 
@@ -158,10 +163,14 @@ int main(int argc, char **argv)
         {"period", required_argument, NULL, 'p'},
         {"scale",  required_argument, NULL, 's'},
         {"log",    required_argument, NULL, 'l'},
+        {"id",     required_argument, NULL, 'i'},
+        {"host",   required_argument, NULL, 'h'},
         {0,        0,                 0,      0}
     };
     
     int optResult;
+    int idFlag = 0;
+    int hostFlag = 0;
     
     while (1)
     {
@@ -185,9 +194,35 @@ int main(int argc, char **argv)
                 logFileName = optarg;
                 loggingEnabled = 1;
                 break;
+            case 'i':
+                id = optarg;
+                idFlag = 1;
+                break;
+            case 'h':
+                host = optarg;
+                hostFlag = 1;
+                break;
             case '?':
                 printUsage();
                 break;
+        }
+    }
+    
+    //check for mandatory parameters
+    if ( (optind == argc) | !idFlag | !hostFlag)
+    {
+        fprintf(stderr, "Error: Missing mandatory parameter(s).\n");
+        printUsage();
+    }
+    
+    //parse port number input
+    if (optind < argc)
+    {
+        portNumber = atoi(argv[optind]);
+        if (portNumber <= 1024)
+        {
+            fprintf(stderr, "Error: Invalid port number.\n");
+            exit(1);
         }
     }
 
@@ -202,6 +237,26 @@ int main(int argc, char **argv)
         }
     }
     
+    //1. open a TCP connection to the server at the specified address and port
+    
+    //use socket to create an endpoint for communication
+    socketFD = socket(AF_INET, SOCK_STREAM, 0);
+    
+    if (socketFD < 0)
+    {
+        fprintf(stderr, "Error creating socket.\n");
+        exit(1);
+    }
+    
+    //identify server
+    server = gethostbyname(host);
+    
+    if (server == NULL)
+    {
+        fprintf(stderr, "Error finding host.\n");
+        exit(1);
+    }
+    
     //initialize temperature sensor and button
     temperature = mraa_aio_init(1); //1 is the I/O pin which refers to the analog A0/A1 connector
     if (temperature == NULL)
@@ -209,32 +264,6 @@ int main(int argc, char **argv)
         fprintf(stderr, "Error initializing temperature sensor.\n");
         mraa_deinit();
         exit(1);
-    }
-    
-    button = mraa_gpio_init(60);    //60 is the I/O pin which refers to the GPIO_50 connector
-    if (button == NULL)
-    {
-        fprintf(stderr, "Error initializing button.\n");
-        mraa_deinit();
-        exit(1);
-    }
-    
-    mraa_result_t MRAA_STATUS;
-
-    //configure button GPIO interface to be an input pin
-    MRAA_STATUS = mraa_gpio_dir(button, MRAA_GPIO_IN);
-    if (MRAA_STATUS != MRAA_SUCCESS)
-    {
-        fprintf(stderr, "Error setting the GPIO direction for the button.\n");
-        Exit(1);
-    }
-    
-    //when the button is pressed, call shutdown
-    MRAA_STATUS = mraa_gpio_isr(button, MRAA_GPIO_EDGE_RISING, &shutdown, NULL);
-    if (MRAA_STATUS != MRAA_SUCCESS)
-    {
-        fprintf(stderr, "Error linking button to shutdown function.\n");
-        Exit(1);
     }
     
     struct pollfd pollSTDIN;
