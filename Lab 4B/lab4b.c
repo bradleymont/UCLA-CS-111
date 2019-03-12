@@ -26,14 +26,37 @@ int period = 1;
 int loggingEnabled = 0;
 char* logFileName;
 int logFileDescriptor;
+int generateReports = 1;
 
 struct timeval currTime;
 struct timeval lastRead;
 struct tm * localTime;
 
+void Write(int fd, const void *buf, size_t count)
+{
+    ssize_t bytesWritten = write(fd, buf, count);
+    
+    if (bytesWritten < 0)
+    {
+        fprintf(stderr, "Error writing to log file.\n");
+        mraa_aio_close(temperature);
+        mraa_gpio_close(button);
+        exit(1);
+    }
+}
+
+void Exit(int status)
+{
+    //close temperature sensor and button
+    mraa_aio_close(temperature);
+    mraa_gpio_close(button);
+    
+    exit(status);
+}
+
 float readTemperature()
 {
-    float tempReading = mraa_aio_read_float(temperature);
+    float tempReading = mraa_aio_read(temperature);
     float R = 1023.0 / tempReading - 1.0;
     R = R0 * R;
     float currTemp = 1.0 / (log(R / R0) / B + 1 / 298.15) - 273.15;
@@ -54,7 +77,7 @@ void printUsage()
 }
 
 //this function is called when the button is pressed
-void buttonShutdown()
+void shutdown()
 {
     //output (and log) a final sample with the time and the string SHUTDOWN (instead of a temperature)
     localTime = localtime(&currTime.tv_sec);
@@ -67,21 +90,10 @@ void buttonShutdown()
 
     if (loggingEnabled)
     {
-        ssize_t bytesWritten = write(logFileDescriptor, report, strlen(report));
-
-        if (bytesWritten < 0)
-        {
-            fprintf(stderr, "Error appending report to log file.\n");
-            exit(1);
-        }
+        Write(logFileDescriptor, report, strlen(report));
     }
 
-    //SHOULD THIS GO HERE?
-    //close temperature sensor and button
-    //mraa_aio_close(temperature);
-    //mraa_gpio_close(button);
-
-    exit(0);
+    Exit(0);
 }
 
 void printSample()
@@ -103,18 +115,18 @@ void printSample()
     //if logging has been enabled, append the report to log file
     if (loggingEnabled)
     {
-        ssize_t bytesWritten = write(logFileDescriptor, report, strlen(report));
-
-        if (bytesWritten < 0)
-        {
-            fprintf(stderr, "Error appending report to log file.\n");
-            exit(1);
-        }
+        Write(logFileDescriptor, report, strlen(report));
     }
 }
 
 void processCommand(char * cmd)
 {
+    if (loggingEnabled)
+    {
+        Write(logFileDescriptor, cmd, strlen(cmd));
+        Write(logFileDescriptor, "\n", 1);
+    }
+    
     if (strcmp(cmd, "SCALE=F") == 0)
     {
         scale = 'F';
@@ -129,17 +141,16 @@ void processCommand(char * cmd)
     }
     else if (strcmp(cmd, "STOP") == 0)
     {
-        //do something
+        generateReports = 0;
     }
     else if (strcmp(cmd, "START") == 0)
     {
-        //do something
+        generateReports = 1;
     }
     else if (strcmp(cmd, "OFF") == 0)
     {
-        //do something
+        shutdown();
     }
-    //LOG ?
 }
 
 int main(int argc, char **argv)
@@ -197,66 +208,94 @@ int main(int argc, char **argv)
     temperature = mraa_aio_init(1); //1 is the I/O pin which refers to the analog A0/A1 connector
     if (temperature == NULL)
     {
-        printf("fail temp\n");
+        fprintf(stderr, "Error initializing temperature sensor.\n");
+        mraa_deinit();
+        exit(1);
     }
     
     button = mraa_gpio_init(60);    //60 is the I/O pin which refers to the GPIO_50 connector
     if (button == NULL)
     {
-        printf("fail button\n");
+        fprintf(stderr, "Error initializing button.\n");
+        mraa_deinit();
+        exit(1);
     }
     
+    mraa_result_t MRAA_STATUS;
+
     //configure button GPIO interface to be an input pin
-    mraa_gpio_dir(button, MRAA_GPIO_IN);
+    MRAA_STATUS = mraa_gpio_dir(button, MRAA_GPIO_IN);
+    if (MRAA_STATUS != MRAA_SUCCESS)
+    {
+        fprintf(stderr, "Error setting the GPIO direction for the button.\n");
+        Exit(1);
+    }
     
-    //when the button is pressed, call buttonShutdown
-    mraa_gpio_isr(button, MRAA_GPIO_EDGE_RISING, &buttonShutdown, NULL);
+    //when the button is pressed, call shutdown
+    MRAA_STATUS = mraa_gpio_isr(button, MRAA_GPIO_EDGE_RISING, &shutdown, NULL);
+    if (MRAA_STATUS != MRAA_SUCCESS)
+    {
+        fprintf(stderr, "Error linking button to shutdown function.\n");
+        Exit(1);
+    }
     
-    
-    struct pollfd fds[1];
-    fds[0].fd = 0;
-    fds[0].events = POLLIN;
-    
-    int pret;
-    int timeout;
+    struct pollfd pollSTDIN;
+    pollSTDIN.fd = 0;
+    pollSTDIN.events = POLLIN;
     
     gettimeofday(&lastRead, NULL);
-
+    
+    char * currCommand = (char *) malloc(sizeof(char));
+    int commandLength = 0;
+    
     while (1)
     {
         gettimeofday(&currTime, NULL);
         //if enough time has passed since the last read, 
-        if (currTime.tv_sec >= lastRead.tv_sec + period)
+        if ( (currTime.tv_sec >= lastRead.tv_sec + period) && generateReports)
         {
             printSample();
             gettimeofday(&lastRead, NULL); //update lastRead to be the time of this read
         }
 
+        //2nd parameter is # of file descriptors to poll, 3rd parameter is timeout (0 in this case)
+        int pollRet = poll(&pollSTDIN, 1, 0);
 
-
-        /*
-        pret = poll(fds, 1, 0);
-        
-        if (pret == 0)
+        if (pollRet < 0)
         {
-            //print temp and time
-            
+            fprintf(stderr, "Error polling for data to read.\n");
+            Exit(1);
         }
-        else
+        else if (pollRet > 0) //there is data to read
         {
-            //read
-            //call a processCommand function
+            char currChar;
+            ssize_t bytesRead = read(0, &currChar, 1);
             
+            if (bytesRead <= 0)
+            {
+                fprintf(stderr, "Error reading in standard input.\n");
+                Exit(1);
+            }
+            
+            if (currChar == '\n') //end of a command
+            {
+                currCommand[commandLength] = '\0';  //null terminate the C string
+                processCommand(currCommand);
+                commandLength = 0;
+                currCommand = (char *) malloc(sizeof(char));
+            }
+            else //add the current character to the buffer
+            {
+                currCommand[commandLength] = currChar;
+                currCommand = realloc(currCommand, (commandLength + 2) * sizeof(char));
+                commandLength++;
+            }
         }
-        */
     }
-    
-    
-    
     
     //close temperature sensor and button
     mraa_aio_close(temperature);
     mraa_gpio_close(button);
     
-    exit(0);
+    Exit(0);
 }
