@@ -11,6 +11,10 @@
 #include <math.h> //for log
 #include <sys/time.h> //gettimeofday(2)
 #include <time.h> //localtime()
+#include <sys/types.h> //open(2)
+#include <sys/stat.h> //open(2)
+#include <fcntl.h> //open(2)
+#include <unistd.h> //write(2)
 
 const int B = 4275;
 const int R0 = 100000;
@@ -19,6 +23,9 @@ mraa_aio_context temperature;
 mraa_gpio_context button;
 char scale = 'F';
 int period = 1;
+int loggingEnabled = 0;
+char* logFileName;
+int logFileDescriptor;
 
 struct timeval currTime;
 struct timeval lastRead;
@@ -42,28 +49,68 @@ float readTemperature()
 
 void printUsage()
 {
-    fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab4b --period=# --scale=(C|F) --log=fileName\n");
+    fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab4b --period=# --scale=(C|F) --log=logFileName\n");
     exit(1);
 }
 
 //this function is called when the button is pressed
 void buttonShutdown()
 {
+    //output (and log) a final sample with the time and the string SHUTDOWN (instead of a temperature)
+    localTime = localtime(&currTime.tv_sec);
     
+    char report[15]; 
+    sprintf(report, "%02d:%02d:%02d SHUTDOWN\n", localTime->tm_hour, localTime->tm_min, localTime->tm_sec);
+
+    printf("%s", report);
+    fflush(stdout);
+
+    if (loggingEnabled)
+    {
+        ssize_t bytesWritten = write(logFileDescriptor, report, strlen(report));
+
+        if (bytesWritten < 0)
+        {
+            fprintf(stderr, "Error appending report to log file.\n");
+            exit(1);
+        }
+    }
+
+    //SHOULD THIS GO HERE?
+    //close temperature sensor and button
+    //mraa_aio_close(temperature);
+    //mraa_gpio_close(button);
+
+    exit(0);
 }
 
 void printSample()
 {
+    //sample temperature
     float temp = readTemperature();
 
+    //get time of the sample in the local timezone
     localTime = localtime(&currTime.tv_sec);
     
-    char report[15];
+    //create an outgoing buffer for the report
+    char report[15]; 
     sprintf(report, "%02d:%02d:%02d %.1f\n", localTime->tm_hour, localTime->tm_min, localTime->tm_sec, temp);
 
+    //push the buffer to stdout
     printf("%s", report);
+    fflush(stdout);
 
-    
+    //if logging has been enabled, append the report to log file
+    if (loggingEnabled)
+    {
+        ssize_t bytesWritten = write(logFileDescriptor, report, strlen(report));
+
+        if (bytesWritten < 0)
+        {
+            fprintf(stderr, "Error appending report to log file.\n");
+            exit(1);
+        }
+    }
 }
 
 void processCommand(char * cmd)
@@ -97,8 +144,6 @@ void processCommand(char * cmd)
 
 int main(int argc, char **argv)
 {
-    char* fileName = NULL;
-    
     static struct option long_options[] =
     {
         {"period", required_argument, NULL, 'p'},
@@ -128,11 +173,23 @@ int main(int argc, char **argv)
                 }
                 break;
             case 'l':
-                fileName = optarg;
+                logFileName = optarg;
+                loggingEnabled = 1;
                 break;
             case '?':
                 printUsage();
                 break;
+        }
+    }
+
+    if (loggingEnabled)
+    {
+        logFileDescriptor = open(logFileName, O_WRONLY|O_CREAT|O_TRUNC, 0666);
+
+        if (logFileDescriptor < 0)
+        {
+            fprintf(stderr, "Error creating log file.\n");
+            exit(1);
         }
     }
     
