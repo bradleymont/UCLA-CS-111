@@ -1,0 +1,22 @@
+NAME: Bradley Mont
+EMAIL: bradleymont@gmail.com
+ID: 804993030
+
+Beaglebone serial number: BBGW18031133
+WiFi MAC address: 2CF7F106786C
+
+Description of Included Files
+
+my_beaglebone.jpg: a selfie of me holding my assembled Beaglebone
+
+connected.png: a screen shot from a USB terminal command session connected to my system, showing that I gave it a name and configured network access
+
+copy.png: a screen shot from a local session in which I copy a hello world program from my laptop/desktop to my Beaglebone
+
+build_run.png: a screen shot from a WIFI SSH session in which I build and run a trivial (hello world) program
+
+git.png: a screen shot from a WIFI SSH session in which I install git and clone a repository
+
+Makefile: file to build the tarball
+
+README: this file
