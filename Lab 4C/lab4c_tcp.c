@@ -34,6 +34,7 @@ char* host;
 int portNumber;
 int socketFD;
 struct hostent* server;
+struct sockaddr_in serverAddress;
 
 struct timeval currTime;
 struct timeval lastRead;
@@ -119,6 +120,11 @@ void printSample()
     if (loggingEnabled)
     {
         Write(logFileDescriptor, report, strlen(report));
+    }
+    //send report over the connection
+    if (socketFD >= 0)
+    {
+        Write(socketFD, report, strlen(report));
     }
 }
 
@@ -209,7 +215,7 @@ int main(int argc, char **argv)
     }
     
     //check for mandatory parameters
-    if ( (optind == argc) | !idFlag | !hostFlag)
+    if ( (optind == argc) | !idFlag | !hostFlag | !loggingEnabled)
     {
         fprintf(stderr, "Error: Missing mandatory parameter(s).\n");
         printUsage();
@@ -257,6 +263,29 @@ int main(int argc, char **argv)
         exit(1);
     }
     
+    //connect to remote host
+    bzero((char *) &serverAddress, sizeof(serverAddress));
+    bcopy((char *) (server->h_addr), (char *) &serverAddress.sin_addr.s_addr, server->h_length);
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_port = htons(portNumber);
+    
+    int connectReturn = connect(socketFD, (struct sockaddr *) &serverAddress, sizeof(serverAddress));
+    
+    if (connectReturn < 0)
+    {
+        fprintf(stderr, "Error connecting to host.\n");
+        exit(1);
+    }
+    
+    //2. immediately send (and log) an ID terminated with a newline: ID=ID-number
+    char IDlog[15] = "ID=";
+    strcat(IDlog, id);
+    strcat(IDlog, "\n");
+    
+    printf("%s", IDlog);
+    Write(logFileDescriptor, IDlog, strlen(IDlog)); //log
+    Write(socketFD, IDlog, strlen(IDlog)); //send to server
+    
     //initialize temperature sensor and button
     temperature = mraa_aio_init(1); //1 is the I/O pin which refers to the analog A0/A1 connector
     if (temperature == NULL)
@@ -266,9 +295,9 @@ int main(int argc, char **argv)
         exit(1);
     }
     
-    struct pollfd pollSTDIN;
-    pollSTDIN.fd = 0;
-    pollSTDIN.events = POLLIN;
+    struct pollfd pollServerInput;
+    pollServerInput.fd = socketFD;
+    pollServerInput.events = POLLIN;
     
     gettimeofday(&lastRead, NULL);
     
@@ -286,17 +315,17 @@ int main(int argc, char **argv)
         }
 
         //2nd parameter is # of file descriptors to poll, 3rd parameter is timeout (0 in this case)
-        int pollRet = poll(&pollSTDIN, 1, 0);
-
+        int pollRet = poll(&pollServerInput, 1, 0);
+        
         if (pollRet < 0)
         {
             fprintf(stderr, "Error polling for data to read.\n");
             Exit(1);
         }
-        else if (pollRet > 0) //there is data to read
+        else if (pollRet > 0) //there is data to read from the server
         {
             char currChar;
-            ssize_t bytesRead = read(0, &currChar, 1);
+            ssize_t bytesRead = read(socketFD, &currChar, 1);
             
             if (bytesRead <= 0)
             {
