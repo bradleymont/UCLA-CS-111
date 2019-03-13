@@ -17,6 +17,9 @@
 #include <unistd.h> //write(2)
 #include <sys/socket.h> //for socket(2), connect(2)
 #include <netdb.h> //for gethostbyname(3)
+#include <netinet/in.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 const int B = 4275;
 const int R0 = 100000;
@@ -35,6 +38,7 @@ int portNumber;
 int socketFD;
 struct hostent* server;
 struct sockaddr_in serverAddress;
+SSL* SSLclient = 0;
 
 struct timeval currTime;
 struct timeval lastRead;
@@ -44,6 +48,8 @@ void Exit(int status)
 {
     //close temperature sensor
     mraa_aio_close(temperature);
+    SSL_shutdown(SSLclient);
+    SSL_free(SSLclient);
     exit(status);
 }
 
@@ -86,21 +92,24 @@ void shutdownDevice()
     //output (and log) a final sample with the time and the string SHUTDOWN (instead of a temperature)
     localTime = localtime(&currTime.tv_sec);
     
-    char report[30]; 
+    char report[30];
     sprintf(report, "%02d:%02d:%02d SHUTDOWN\n", localTime->tm_hour, localTime->tm_min, localTime->tm_sec);
+    
+    int SSLwriteStatus = SSL_write(SSLclient, report, strlen(report)); //send to server
+    if (SSLwriteStatus <= 0)
+    {
+        fprintf(stderr, "Error: SSL write failed.\n");
+        exit(2);
+    }
     
     printf("%s", report);
     fflush(stdout);
-
+    
     if (loggingEnabled)
     {
         Write(logFileDescriptor, report, strlen(report));
     }
-    //send report over the connection
-    if (socketFD >= 0)
-    {
-        Write(socketFD, report, strlen(report));
-    }
+    
     Exit(0);
 }
 
@@ -108,27 +117,29 @@ void printSample()
 {
     //sample temperature
     float temp = readTemperature();
-
+    
     //get time of the sample in the local timezone
     localTime = localtime(&currTime.tv_sec);
     
     //create an outgoing buffer for the report
-    char report[15]; 
+    char report[15];
     sprintf(report, "%02d:%02d:%02d %.1f\n", localTime->tm_hour, localTime->tm_min, localTime->tm_sec, temp);
-
+    
+    int SSLwriteStatus = SSL_write(SSLclient, report, strlen(report)); //send to server
+    if (SSLwriteStatus <= 0)
+    {
+        fprintf(stderr, "Error: SSL write failed.\n");
+        exit(2);
+    }
+    
     //push the buffer to stdout
     printf("%s", report);
     fflush(stdout);
-
+    
     //if logging has been enabled, append the report to log file
     if (loggingEnabled)
     {
         Write(logFileDescriptor, report, strlen(report));
-    }
-    //send report over the connection
-    if (socketFD >= 0)
-    {
-        Write(socketFD, report, strlen(report));
     }
 }
 
@@ -235,11 +246,11 @@ int main(int argc, char **argv)
             exit(1);
         }
     }
-
+    
     if (loggingEnabled)
     {
         logFileDescriptor = open(logFileName, O_WRONLY|O_CREAT|O_TRUNC, 0666);
-
+        
         if (logFileDescriptor < 0)
         {
             fprintf(stderr, "Error creating log file.\n");
@@ -247,7 +258,7 @@ int main(int argc, char **argv)
         }
     }
     
-    //1. open a TCP connection to the server at the specified address and port
+    //1. open a TLS connection to the server at the specified address and port
     
     //use socket to create an endpoint for communication
     socketFD = socket(AF_INET, SOCK_STREAM, 0);
@@ -281,14 +292,54 @@ int main(int argc, char **argv)
         exit(1);
     }
     
+    //SSL setup
+    //SSL* SSLclient = 0;
+    SSL_library_init();
+    SSL_load_error_strings();
+    OpenSSL_add_all_algorithms();
+    SSL_CTX* SSLcontext = SSL_CTX_new(TLSv1_client_method());
+    
+    if (SSLcontext == NULL)
+    {
+        fprintf(stderr, "Error: Failed to get SSL context.\n");
+        exit(2);
+    }
+    
+    SSLclient = SSL_new(SSLcontext);
+    
+    if (SSLclient == NULL)
+    {
+        fprintf(stderr, "Error: Failed to create SSL object.\n");
+        exit(2);
+    }
+    
+    if (!SSL_set_fd(SSLclient, socketFD))
+    {
+        fprintf(stderr, "Error: Failed to link socket with SSL.\n");
+        exit(2);
+    }
+    
+    if (SSL_connect(SSLclient) != 1)
+    {
+        fprintf(stderr, "Error: Failed to establish SSL connection.\n");
+        exit(2);
+    }
+    
     //2. immediately send (and log) an ID terminated with a newline: ID=ID-number
     char IDlog[15] = "ID=";
     strcat(IDlog, id);
     strcat(IDlog, "\n");
     
-    printf("%s", IDlog);
+    int SSLwriteStatus = SSL_write(SSLclient, IDlog, strlen(IDlog)); //send to server
+    if (SSLwriteStatus <= 0)
+    {
+        fprintf(stderr, "Error: SSL write failed.\n");
+        exit(2);
+    }
+    
     Write(logFileDescriptor, IDlog, strlen(IDlog)); //log
-    Write(socketFD, IDlog, strlen(IDlog)); //send to server
+    
+    printf("%s", IDlog);
     
     //initialize temperature sensor and button
     temperature = mraa_aio_init(1); //1 is the I/O pin which refers to the analog A0/A1 connector
@@ -311,13 +362,13 @@ int main(int argc, char **argv)
     while (1)
     {
         gettimeofday(&currTime, NULL);
-        //if enough time has passed since the last read, 
+        //if enough time has passed since the last read,
         if ( (currTime.tv_sec >= lastRead.tv_sec + period) && generateReports)
         {
             printSample();
             gettimeofday(&lastRead, NULL); //update lastRead to be the time of this read
         }
-
+        
         //2nd parameter is # of file descriptors to poll, 3rd parameter is timeout (0 in this case)
         int pollRet = poll(&pollServerInput, 1, 0);
         
@@ -326,10 +377,13 @@ int main(int argc, char **argv)
             fprintf(stderr, "Error polling for data to read.\n");
             Exit(1);
         }
-        else if (pollRet > 0) //there is data to read from the server
+        //else if (pollRet > 0) //there is data to read from the server
+        else if (pollServerInput.revents & POLLIN)
         {
             char currChar;
-            ssize_t bytesRead = read(socketFD, &currChar, 1);
+            
+            //ssize_t bytesRead = read(socketFD, &currChar, 1);
+            ssize_t bytesRead = SSL_read(SSLclient, &currChar, 1);
             
             if (bytesRead <= 0)
             {
@@ -357,3 +411,4 @@ int main(int argc, char **argv)
     free(currCommand);
     Exit(0);
 }
+
