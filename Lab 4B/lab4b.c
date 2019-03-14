@@ -80,7 +80,7 @@ void shutdown()
     //output (and log) a final sample with the time and the string SHUTDOWN (instead of a temperature)
     localTime = localtime(&currTime.tv_sec);
     
-    char report[15]; 
+    char report[20];
     sprintf(report, "%02d:%02d:%02d SHUTDOWN\n", localTime->tm_hour, localTime->tm_min, localTime->tm_sec);
 
     printf("%s", report);
