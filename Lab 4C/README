@@ -1,3 +1,13 @@
 NAME: Bradley Mont
 EMAIL: bradleymont@gmail.com
 ID: 804993030
+
+Description of Included Files
+
+lab4c_tcp.c: C source file for an embedded application that builds, runs, and records temperature data on a Beaglebone, and also communicates with a TCP server
+
+lab4c_tls.c: C source file for an embedded application that builds, runs, and records temperature data on a Beaglebone, and also communicates with a TCP server
+ 
+Makefile: builds both applications, contains default, clean, and dist targets
+
+README: this file

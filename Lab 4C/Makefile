@@ -7,9 +7,7 @@ CFLAGS = -Wall -Wextra -g -lm -lmraa
 
 default:
 	$(CC) $(CFLAGS) lab4c_tcp.c -o lab4c_tcp
-	$(CC) $(CFLAGS) -lssl -lcrypto lab4c_tls.c -o lab4c_tls
-check:
-	
+	$(CC) $(CFLAGS) -lssl -lcrypto lab4c_tls.c -o lab4c_tls	
 clean:
 	rm -f lab4c_tcp lab4c_tls *.tar.gz *.o
 dist:

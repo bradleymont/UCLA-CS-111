@@ -60,7 +60,7 @@ void Write(int fd, const void *buf, size_t count)
     if (bytesWritten < 0)
     {
         fprintf(stderr, "Error writing.\n");
-        Exit(1);
+        Exit(2);
     }
 }
 
@@ -82,7 +82,7 @@ float readTemperature()
 
 void printUsage()
 {
-    fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab4c_tcp --period=# --scale=(C|F) --log=logFileName --id=# --host=(name|address) portNumber\n");
+    fprintf(stderr, "Error: incorrect argument.\nUsage: ./lab4c_tls --period=# --scale=(C|F) --log=logFileName --id=# --host=(name|address) portNumber\n");
     exit(1);
 }
 
@@ -122,7 +122,7 @@ void printSample()
     localTime = localtime(&currTime.tv_sec);
     
     //create an outgoing buffer for the report
-    char report[15];
+    char report[20];
     sprintf(report, "%02d:%02d:%02d %.1f\n", localTime->tm_hour, localTime->tm_min, localTime->tm_sec, temp);
     
     int SSLwriteStatus = SSL_write(SSLclient, report, strlen(report)); //send to server
@@ -149,6 +149,7 @@ void processCommand(char * cmd)
     {
         Write(logFileDescriptor, cmd, strlen(cmd));
         Write(logFileDescriptor, "\n", 1);
+        printf("%s\n", cmd);
     }
     
     if (strcmp(cmd, "SCALE=F") == 0)
@@ -254,7 +255,7 @@ int main(int argc, char **argv)
         if (logFileDescriptor < 0)
         {
             fprintf(stderr, "Error creating log file.\n");
-            exit(1);
+            exit(2);
         }
     }
     
@@ -266,7 +267,7 @@ int main(int argc, char **argv)
     if (socketFD < 0)
     {
         fprintf(stderr, "Error creating socket.\n");
-        exit(1);
+        exit(2);
     }
     
     //identify server
@@ -275,13 +276,13 @@ int main(int argc, char **argv)
     if (server == NULL)
     {
         fprintf(stderr, "Error finding host.\n");
-        exit(1);
+        exit(2);
     }
     
     //connect to remote host
     bzero((char *) &serverAddress, sizeof(serverAddress));
-    bcopy((char *) (server->h_addr), (char *) &serverAddress.sin_addr.s_addr, server->h_length);
     serverAddress.sin_family = AF_INET;
+    bcopy((char *) (server->h_addr), (char *) &serverAddress.sin_addr.s_addr, server->h_length);
     serverAddress.sin_port = htons(portNumber);
     
     int connectReturn = connect(socketFD, (struct sockaddr *) &serverAddress, sizeof(serverAddress));
@@ -289,11 +290,10 @@ int main(int argc, char **argv)
     if (connectReturn < 0)
     {
         fprintf(stderr, "Error connecting to host.\n");
-        exit(1);
+        exit(2);
     }
     
     //SSL setup
-    //SSL* SSLclient = 0;
     SSL_library_init();
     SSL_load_error_strings();
     OpenSSL_add_all_algorithms();
@@ -326,7 +326,7 @@ int main(int argc, char **argv)
     }
     
     //2. immediately send (and log) an ID terminated with a newline: ID=ID-number
-    char IDlog[15] = "ID=";
+    char IDlog[30] = "ID=";
     strcat(IDlog, id);
     strcat(IDlog, "\n");
     
@@ -356,8 +356,11 @@ int main(int argc, char **argv)
     
     gettimeofday(&lastRead, NULL);
     
-    char * currCommand = (char *) malloc(sizeof(char));
-    int commandLength = 0;
+    char cmdBuffer[128];
+    char cmdBufferCopy[128];
+    memset(cmdBuffer, 0, 128);
+    memset(cmdBufferCopy, 0, 128);
+    int index = 0;
     
     while (1)
     {
@@ -377,38 +380,34 @@ int main(int argc, char **argv)
             fprintf(stderr, "Error polling for data to read.\n");
             Exit(1);
         }
-        //else if (pollRet > 0) //there is data to read from the server
-        else if (pollServerInput.revents & POLLIN)
+        else if (pollServerInput.revents & POLLIN) //there is data to read from the server
         {
-            char currChar;
+            ssize_t bytesRead = SSL_read(SSLclient, cmdBuffer, 128);
             
-            //ssize_t bytesRead = read(socketFD, &currChar, 1);
-            ssize_t bytesRead = SSL_read(SSLclient, &currChar, 1);
-            
-            if (bytesRead <= 0)
+            if (bytesRead < 0)
             {
                 fprintf(stderr, "Error reading in standard input.\n");
                 Exit(1);
             }
             
-            if (currChar == '\n') //end of a command
+            int i;
+            for (i = 0; i < bytesRead && index < 128; i++)
             {
-                currCommand[commandLength] = '\0';  //null terminate the C string
-                processCommand(currCommand);
-                commandLength = 0;
-                free(currCommand);
-                currCommand = (char *) malloc(sizeof(char));
-            }
-            else //add the current character to the buffer
-            {
-                currCommand[commandLength] = currChar;
-                currCommand = realloc(currCommand, (commandLength + 2) * sizeof(char));
-                commandLength++;
+                if (cmdBuffer[i] == '\n')
+                {
+                    processCommand( (char *) &cmdBufferCopy);
+                    memset(cmdBufferCopy, 0, 128);
+                    index = 0;
+                }
+                else
+                {
+                    cmdBufferCopy[index] = cmdBuffer[i];
+                    index++;
+                }
             }
         }
     }
     
-    free(currCommand);
     Exit(0);
 }
 

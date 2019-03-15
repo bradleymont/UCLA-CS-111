@@ -54,7 +54,7 @@ void Write(int fd, const void *buf, size_t count)
     if (bytesWritten < 0)
     {
         fprintf(stderr, "Error writing.\n");
-        Exit(1);
+        Exit(2);
     }
 }
 
@@ -113,7 +113,7 @@ void printSample()
     localTime = localtime(&currTime.tv_sec);
     
     //create an outgoing buffer for the report
-    char report[15]; 
+    char report[20];
     sprintf(report, "%02d:%02d:%02d %.1f\n", localTime->tm_hour, localTime->tm_min, localTime->tm_sec, temp);
 
     //push the buffer to stdout
@@ -255,7 +255,7 @@ int main(int argc, char **argv)
     if (socketFD < 0)
     {
         fprintf(stderr, "Error creating socket.\n");
-        exit(1);
+        exit(2);
     }
     
     //identify server
@@ -264,7 +264,7 @@ int main(int argc, char **argv)
     if (server == NULL)
     {
         fprintf(stderr, "Error finding host.\n");
-        exit(1);
+        exit(2);
     }
     
     //connect to remote host
@@ -278,7 +278,7 @@ int main(int argc, char **argv)
     if (connectReturn < 0)
     {
         fprintf(stderr, "Error connecting to host.\n");
-        exit(1);
+        exit(2);
     }
     
     //2. immediately send (and log) an ID terminated with a newline: ID=ID-number
@@ -296,7 +296,7 @@ int main(int argc, char **argv)
     {
         fprintf(stderr, "Error initializing temperature sensor.\n");
         mraa_deinit();
-        exit(1);
+        exit(2);
     }
     
     struct pollfd pollServerInput;
@@ -305,8 +305,11 @@ int main(int argc, char **argv)
     
     gettimeofday(&lastRead, NULL);
     
-    char * currCommand = (char *) malloc(sizeof(char));
-    int commandLength = 0;
+    char cmdBuffer[128];
+    char cmdBufferCopy[128];
+    memset(cmdBuffer, 0, 128);
+    memset(cmdBufferCopy, 0, 128);
+    int index = 0;
     
     while (1)
     {
@@ -326,34 +329,33 @@ int main(int argc, char **argv)
             fprintf(stderr, "Error polling for data to read.\n");
             Exit(1);
         }
-        else if (pollRet > 0) //there is data to read from the server
+        else if (pollServerInput.revents & POLLIN) //there is data to read from the server
         {
-            char currChar;
-            ssize_t bytesRead = read(socketFD, &currChar, 1);
+            ssize_t bytesRead = read(socketFD, cmdBuffer, 128);
             
-            if (bytesRead <= 0)
+            if (bytesRead < 0)
             {
                 fprintf(stderr, "Error reading in standard input.\n");
                 Exit(1);
             }
             
-            if (currChar == '\n') //end of a command
+            int i;
+            for (i = 0; i < bytesRead && index < 128; i++)
             {
-                currCommand[commandLength] = '\0';  //null terminate the C string
-                processCommand(currCommand);
-                commandLength = 0;
-                free(currCommand);
-                currCommand = (char *) malloc(sizeof(char));
-            }
-            else //add the current character to the buffer
-            {
-                currCommand[commandLength] = currChar;
-                currCommand = realloc(currCommand, (commandLength + 2) * sizeof(char));
-                commandLength++;
+                if (cmdBuffer[i] == '\n')
+                {
+                    processCommand( (char *) &cmdBufferCopy);
+                    memset(cmdBufferCopy, 0, 128);
+                    index = 0;
+                }
+                else
+                {
+                    cmdBufferCopy[index] = cmdBuffer[i];
+                    index++;
+                }
             }
         }
     }
     
-    free(currCommand);
     Exit(0);
 }
